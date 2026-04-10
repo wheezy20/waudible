@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=WAudible
+Comment=Your personal audiobook library
+Exec=/home/wheezy20/pdf-audiobook-player/launch.sh
+Icon=/home/wheezy20/.local/share/icons/waudible.png
+Terminal=false
+Categories=AudioVideo;Audio;Education;
+StartupNotify=true

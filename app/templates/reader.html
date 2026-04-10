@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ info.title }} — WAudible</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="reader-body">
+
+<header>
+    <div class="header-inner">
+        <a href="/" class="back-btn">← Library</a>
+        <h1><span class="logo-w">W</span>Audible</h1>
+    </div>
+</header>
+
+<div class="reader-layout">
+
+    <!-- ── TOC SIDEBAR ── -->
+    <aside class="toc-sidebar" id="toc-sidebar">
+        <div class="toc-header">
+            <span class="toc-title">Contents</span>
+            <span class="toc-legend">
+                <span class="legend-dot ready-dot-lg"></span> Ready
+                <span class="legend-dot processing-dot-lg"></span> Processing
+            </span>
+        </div>
+        <div class="toc-list" id="toc-list">
+            <p class="toc-loading">Loading...</p>
+        </div>
+    </aside>
+
+    <!-- ── MAIN READER ── -->
+    <main class="reader-main">
+
+        <!-- Book hero -->
+        <section class="book-hero">
+            <div class="book-cover-hero">
+                {% if progress.cover %}
+                    <img src="/cover/{{ progress.cover }}"
+                         alt="{{ info.title }}" class="hero-cover-img">
+                {% else %}
+                    <div class="hero-cover-auto">
+                        <span class="hero-cover-initials">
+                            {{ info.title[:2].upper() }}
+                        </span>
+                    </div>
+                {% endif %}
+            </div>
+            <div class="book-hero-info">
+                <h2>{{ info.title }}</h2>
+                <p class="book-author">{{ info.author }}</p>
+                <p class="book-pages">{{ total_pages }} pages total</p>
+                <p class="book-genre">{{ progress.genre }}</p>
+            </div>
+        </section>
+
+        <!-- Player -->
+        <section class="player-section">
+
+            <div class="page-display">
+                <span class="page-label">Page</span>
+                <span class="page-number" id="page-number">
+                    {{ progress.current_page + 1 }}
+                </span>
+                <span class="page-label">of {{ total_pages }}</span>
+            </div>
+
+            <audio id="audio-player" controls>
+                Your browser does not support audio.
+            </audio>
+
+            <div class="player-controls">
+                <button class="btn btn-control" id="btn-prev" onclick="changePage(-1)">
+                    ⏮ Prev
+                </button>
+                <div class="speed-wrap">
+                    <label for="speed">Speed</label>
+                    <select id="speed" onchange="reloadAudio()">
+                        <option value="0.75">0.75×</option>
+                        <option value="1.0" selected>1.0×</option>
+                        <option value="1.25">1.25×</option>
+                        <option value="1.5">1.5×</option>
+                        <option value="2.0">2.0×</option>
+                    </select>
+                </div>
+                <button class="btn btn-control" id="btn-next" onclick="changePage(1)">
+                    Next ⏭
+                </button>
+            </div>
+
+            <div class="voice-wrap">
+                <label for="voice">Voice</label>
+                <select id="voice" onchange="reloadAudio()">
+                    {% for v in voices %}
+                    <option value="{{ v }}"
+                        {% if v == progress.voice %}selected{% endif %}>
+                        {{ v }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="jump-wrap">
+                <label for="jump-input">Jump to page</label>
+                <input type="number" id="jump-input" min="1"
+                       max="{{ total_pages }}" placeholder="e.g. 42">
+                <button class="btn btn-primary" onclick="jumpToPage()">Go</button>
+            </div>
+
+            <p class="status-msg" id="status-msg">Resuming...</p>
+
+        </section>
+
+        <!-- Page text preview -->
+        <section class="text-preview">
+            <h3>Page Text</h3>
+            <div class="text-box" id="text-box">Loading...</div>
+        </section>
+
+    </main>
+</div>
+
+<script>
+    const FILENAME    = "{{ filename }}";
+    const TOTAL_PAGES = {{ total_pages }};
+    let   currentPage = {{ progress.current_page }};
+    let   readyPages  = new Set();
+
+    const audioEl   = document.getElementById('audio-player');
+    const pageNumEl = document.getElementById('page-number');
+    const statusEl  = document.getElementById('status-msg');
+    const textBoxEl = document.getElementById('text-box');
+    const speedEl   = document.getElementById('speed');
+    const voiceEl   = document.getElementById('voice');
+    const tocList   = document.getElementById('toc-list');
+
+    // ── LOAD PAGE ──
+    function loadPage(page, autoplay = true) {
+        if (page < 0 || page >= TOTAL_PAGES) return;
+        currentPage = page;
+        pageNumEl.textContent = currentPage + 1;
+        document.getElementById('btn-prev').disabled = currentPage === 0;
+        document.getElementById('btn-next').disabled = currentPage === TOTAL_PAGES - 1;
+
+        highlightTocItem(currentPage);
+
+        const speed    = speedEl.value;
+        const voice    = voiceEl.value;
+        const audioUrl = `/audio/${FILENAME}/${currentPage}?speed=${speed}&voice=${voice}`;
+
+        if (readyPages.has(currentPage)) {
+            statusEl.textContent = "Playing page " + (currentPage + 1);
+        } else {
+            statusEl.textContent = "Generating audio for page " + (currentPage + 1) + "... please wait";
+        }
+
+        audioEl.src = audioUrl;
+        audioEl.load();
+
+        if (autoplay) {
+            audioEl.play().catch(() => {
+                statusEl.textContent = "Click play to listen.";
+            });
+        }
+
+        audioEl.oncanplay = () => {
+            statusEl.textContent = "Playing page " + (currentPage + 1);
+            readyPages.add(currentPage);
+            updateTocReadiness();
+        };
+
+        audioEl.onwaiting = () => {
+            statusEl.textContent = "Generating audio... please wait";
+        };
+
+        audioEl.onended = () => {
+            saveProgress();
+            if (currentPage + 1 < TOTAL_PAGES) {
+                changePage(1);
+            } else {
+                statusEl.textContent = "🎉 You've reached the end!";
+            }
+        };
+
+        fetchPageText(page);
+        saveProgress();
+    }
+
+    function changePage(dir) { loadPage(currentPage + dir); }
+
+    function reloadAudio() { loadPage(currentPage); }
+
+    function jumpToPage() {
+        const val = parseInt(document.getElementById('jump-input').value);
+        if (isNaN(val) || val < 1 || val > TOTAL_PAGES) {
+            statusEl.textContent = "Invalid page number.";
+            return;
+        }
+        loadPage(val - 1);
+    }
+
+    // ── FETCH PAGE TEXT ──
+    async function fetchPageText(page) {
+        try {
+            const res  = await fetch(`/page_text/${FILENAME}/${page}`);
+            const data = await res.json();
+            textBoxEl.textContent = data.text || "[No text on this page]";
+        } catch {
+            textBoxEl.textContent = "[Could not load page text]";
+        }
+    }
+
+    // ── SAVE PROGRESS ──
+    async function saveProgress() {
+        await fetch('/save_progress', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+                filename: FILENAME,
+                page    : currentPage,
+                speed   : parseFloat(speedEl.value),
+                voice   : voiceEl.value,
+            })
+        });
+    }
+
+    // ── LOAD TOC ──
+    async function loadToc() {
+        const res      = await fetch(`/toc/${FILENAME}`);
+        const chapters = await res.json();
+        tocList.innerHTML = '';
+
+        if (!chapters.length) {
+            tocList.innerHTML = '<p class="toc-loading">No contents found.</p>';
+            return;
+        }
+
+        chapters.forEach(ch => {
+            const item = document.createElement('div');
+            item.className  = 'toc-item' + (ch.level === 2 ? ' toc-sub' : '');
+            item.dataset.page = ch.page;
+            item.id         = 'toc-' + ch.page;
+
+            const dot   = document.createElement('span');
+            dot.className = 'toc-dot';
+            dot.id        = 'dot-' + ch.page;
+
+            const label = document.createElement('span');
+            label.className = 'toc-label';
+            label.textContent = ch.title;
+
+            const pg    = document.createElement('span');
+            pg.className  = 'toc-pg';
+            pg.textContent = 'p.' + (ch.page + 1);
+
+            item.appendChild(dot);
+            item.appendChild(label);
+            item.appendChild(pg);
+            item.onclick = () => loadPage(ch.page);
+            tocList.appendChild(item);
+        });
+
+        updateTocReadiness();
+        highlightTocItem(currentPage);
+    }
+
+    // ── FETCH READINESS + UPDATE TOC DOTS ──
+    async function updateTocReadiness() {
+        const speed = speedEl.value;
+        const voice = voiceEl.value;
+        const res   = await fetch(`/readiness/${FILENAME}?speed=${speed}&voice=${voice}`);
+        const data  = await res.json();
+        readyPages  = new Set(data.ready);
+
+        document.querySelectorAll('.toc-dot').forEach(dot => {
+            const page = parseInt(dot.id.replace('dot-', ''));
+            dot.classList.toggle('dot-ready',      readyPages.has(page));
+            dot.classList.toggle('dot-processing', !readyPages.has(page));
+        });
+    }
+
+    // ── HIGHLIGHT ACTIVE TOC ITEM ──
+    function highlightTocItem(page) {
+        document.querySelectorAll('.toc-item').forEach(el => {
+            el.classList.remove('toc-active');
+        });
+        // Find the closest chapter at or before current page
+        let best = null;
+        document.querySelectorAll('.toc-item').forEach(el => {
+            const p = parseInt(el.dataset.page);
+            if (p <= page) best = el;
+        });
+        if (best) {
+            best.classList.add('toc-active');
+            best.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+
+    // ── POLL READINESS EVERY 5 SECONDS WHILE PROCESSING ──
+    const readinessInterval = setInterval(async () => {
+        await updateTocReadiness();
+        const res  = await fetch(`/status/${FILENAME}`);
+        const data = await res.json();
+        if (!data.running) clearInterval(readinessInterval);
+    }, 5000);
+
+    // ── START ──
+    loadToc();
+    loadPage(currentPage, true);  // auto-resume last page
+</script>
+
+</body>
+</html>
