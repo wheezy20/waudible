@@ -48,7 +48,7 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Eyram runs `convert_wav_to_mp3.py` on the existing WAV files
 - [x] Delete `convert_wav_to_mp3.py` from the repo after it has been run
 
-## 5. Go live at waudio.eyramwilson.dev
+## 5. Go live at waudible.eyramwilson.dev
 
 - [x] Production server: gunicorn, 1 worker process, 4 threads, 120 s timeout, on 127.0.0.1:8000 only (`run_prod.sh`, `gunicorn.conf.py`)
 - [x] Audio queue worker starts under gunicorn and re-queues unfinished books
@@ -60,7 +60,7 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] systemd unit and install steps in `deploy/`
 - [ ] Install the systemd service (`deploy/README.md`)
 - [ ] Cloudflare Tunnel from the laptop to `http://127.0.0.1:8000`
-- [ ] DNS for `waudio.eyramwilson.dev`
+- [ ] DNS for `waudible.eyramwilson.dev`
 - [ ] Move to a VPS later
 
 ## 6. PWA offline mode

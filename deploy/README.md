@@ -1,6 +1,6 @@
 # Running WAudible as a service
 
-WAudible runs under gunicorn on `127.0.0.1:8000`, started by `run_prod.sh` (settings in `gunicorn.conf.py`). systemd keeps it running and restarts it after a crash. The Cloudflare Tunnel forwards `waudio.eyramwilson.dev` to `http://127.0.0.1:8000`. gunicorn only listens on this machine, so nothing else on the network can reach it directly.
+WAudible runs under gunicorn on `127.0.0.1:8000`, started by `run_prod.sh` (settings in `gunicorn.conf.py`). systemd keeps it running and restarts it after a crash. The Cloudflare Tunnel forwards `waudible.eyramwilson.dev` to `http://127.0.0.1:8000`. gunicorn only listens on this machine, so nothing else on the network can reach it directly.
 
 ## Before you start
 

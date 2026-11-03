@@ -7,7 +7,7 @@ Design of the multi-user hosted version. Accounts, per-user books, `storage_key`
 ```
 Browser (PWA)
    |
-Cloudflare Tunnel  (waudio.eyramwilson.dev)
+Cloudflare Tunnel  (waudible.eyramwilson.dev)
    |
 Flask app (Flask-Login, Flask-SQLAlchemy)
    |-- Neon Postgres  (users, books, progress)
