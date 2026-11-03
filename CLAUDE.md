@@ -19,7 +19,9 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 ## Layout
 
 - `app/main.py`: Flask config and routes (login required everywhere except login and register, books looked up by id and owner)
-- `app/tts_engine.py`: loads Kokoro once, generates page audio, allowed voices and speeds
+- `app/tts_engine.py`: loads Kokoro once, generates page audio (MP3, speed 1.0, one file per voice), allowed voices and speeds
+- `app/audio_codec.py`: ffmpeg MP3 encoding and the startup ffmpeg check
+- `convert_wav_to_mp3.py`: one-off conversion of old WAV pages, to be deleted once it has been run
 - `app/worker.py`: the single background worker and its queue
 - `app/storage.py`: paths for files stored under each book's `storage_key`
 - `app/pdf_reader.py`: page text, page count, metadata, table of contents
@@ -37,7 +39,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 One-time setup:
 
 ```bash
-sudo apt install espeak-ng -y
+sudo apt install espeak-ng ffmpeg -y
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

@@ -41,8 +41,12 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 
 ## 4. Convert generated audio from WAV to MP3
 
-- [ ] Generate MP3 instead of WAV
-- [ ] Serve MP3 with the correct mimetype
+- [x] Generate MP3 (mono, 64 kbps) with ffmpeg instead of WAV
+- [x] Serve MP3 as `audio/mpeg`
+- [x] Generate once per voice at speed 1.0; the browser changes speed with `playbackRate`
+- [x] Check for ffmpeg at startup
+- [ ] Eyram runs `convert_wav_to_mp3.py` on the existing WAV files
+- [ ] Delete `convert_wav_to_mp3.py` from the repo after it has been run
 
 ## 5. Go live at waudio.eyramwilson.dev
 

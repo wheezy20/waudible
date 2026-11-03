@@ -87,16 +87,23 @@ def _get_book(book_id: int) -> Book:
     return book
 
 
-def _audio_options(source) -> tuple[float, str]:
-    """Speed and voice end up in file paths, so only known values pass."""
+def _voice(source) -> str:
+    """The voice ends up in file paths, so only known voices pass."""
+    voice = source.get('voice', 'af_heart')
+    if voice not in VOICES:
+        abort(400)
+    return voice
+
+
+def _speed(source) -> float:
+    """Playback speed saved in progress (audio itself is always 1.0)."""
     try:
         speed = float(source.get('speed', 1.0))
     except (TypeError, ValueError):
         abort(400)
-    voice = source.get('voice', 'af_heart')
-    if speed not in SPEEDS or voice not in VOICES:
+    if speed not in SPEEDS:
         abort(400)
-    return speed, voice
+    return speed
 
 
 def _cover_ext(filename: str) -> str | None:
@@ -247,21 +254,21 @@ def read(book_id):
 # ─────────────────────────────────────────
 @app.route('/audio/<int:book_id>/<int:page>')
 def get_audio(book_id, page):
-    book         = _get_book(book_id)
-    speed, voice = _audio_options(request.args)
+    book  = _get_book(book_id)
+    voice = _voice(request.args)
     if page >= book.pages:
         return jsonify({"error": "Page out of range"}), 400
 
-    audio_path = get_audio_path(book.storage_key, page, speed, voice)
+    audio_path = get_audio_path(book.storage_key, page, voice)
     if not audio_path:
         # Not generated yet: make this one page now
         text       = extract_page(pdf_path(book.storage_key), page)
         audio_path = text_to_audio(text, book.storage_key,
-                                   page=page, speed=speed, voice=voice)
+                                   page=page, voice=voice)
         if not audio_path:
             abort(404)
 
-    return send_file(audio_path, mimetype='audio/wav')
+    return send_file(audio_path, mimetype='audio/mpeg')
 
 
 # ─────────────────────────────────────────
@@ -293,11 +300,11 @@ def toc(book_id):
 @app.route('/readiness/<int:book_id>')
 def readiness(book_id):
     """Return list of page numbers that have audio ready."""
-    book         = _get_book(book_id)
-    speed, voice = _audio_options(request.args)
+    book  = _get_book(book_id)
+    voice = _voice(request.args)
     ready = [
         i for i in range(book.pages)
-        if get_audio_path(book.storage_key, i, speed, voice)
+        if get_audio_path(book.storage_key, i, voice)
     ]
     return jsonify({"ready": ready, "total": book.pages})
 
@@ -324,8 +331,9 @@ def save():
         page    = int(data['page'])
     except (KeyError, TypeError, ValueError):
         abort(400)
-    book         = _get_book(book_id)
-    speed, voice = _audio_options(data)
+    book  = _get_book(book_id)
+    speed = _speed(data)
+    voice = _voice(data)
     if not 0 <= page < max(book.pages, 1):
         abort(400)
 

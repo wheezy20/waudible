@@ -79,7 +79,7 @@
                 </button>
                 <div class="speed-wrap">
                     <label for="speed">Speed</label>
-                    <select id="speed" onchange="reloadAudio()">
+                    <select id="speed" onchange="applySpeed()">
                         {% for s in speeds %}
                         <option value="{{ s }}"
                             {% if s == progress.speed %}selected{% endif %}>{{ s }}×</option>
@@ -137,6 +137,23 @@
     const voiceEl   = document.getElementById('voice');
     const tocList   = document.getElementById('toc-list');
 
+    // Audio is always generated at 1.0. Speed is changed here in the
+    // browser, so changing it never fetches new audio.
+    audioEl.preservesPitch = true;
+
+    function setPlaybackRate() {
+        const rate = parseFloat(speedEl.value);
+        // load() resets playbackRate to defaultPlaybackRate, so set both
+        // to keep the speed between pages
+        audioEl.defaultPlaybackRate = rate;
+        audioEl.playbackRate        = rate;
+    }
+
+    function applySpeed() {
+        setPlaybackRate();
+        saveProgress();
+    }
+
     // ── LOAD PAGE ──
     function loadPage(page, autoplay = true) {
         if (page < 0 || page >= TOTAL_PAGES) return;
@@ -147,9 +164,8 @@
 
         highlightTocItem(currentPage);
 
-        const speed    = speedEl.value;
         const voice    = voiceEl.value;
-        const audioUrl = `/audio/${BOOK_ID}/${currentPage}?speed=${speed}&voice=${voice}`;
+        const audioUrl = `/audio/${BOOK_ID}/${currentPage}?voice=${voice}`;
 
         if (readyPages.has(currentPage)) {
             statusEl.textContent = "Playing page " + (currentPage + 1);
@@ -159,6 +175,7 @@
 
         audioEl.src = audioUrl;
         audioEl.load();
+        setPlaybackRate();
 
         if (autoplay) {
             audioEl.play().catch(() => {
@@ -272,9 +289,8 @@
 
     // ── FETCH READINESS + UPDATE TOC DOTS ──
     async function updateTocReadiness() {
-        const speed = speedEl.value;
         const voice = voiceEl.value;
-        const res   = await fetch(`/readiness/${BOOK_ID}?speed=${speed}&voice=${voice}`);
+        const res   = await fetch(`/readiness/${BOOK_ID}?voice=${voice}`);
         const data  = await res.json();
         readyPages  = new Set(data.ready);
 

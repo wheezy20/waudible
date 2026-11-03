@@ -70,10 +70,18 @@ When a user uploads a PDF, the app generates a random `storage_key` (`secrets.to
 ```
 data/books/<storage_key>.pdf
 data/covers/<storage_key>.<ext>          (jpg, png or webp)
-data/audio/<storage_key>/page<N>_spd<speed>_v<voice>.wav   (.mp3 after step 4)
+data/audio/<storage_key>/page<N>_v<voice>.mp3
 ```
 
-Speed and voice are part of audio paths, so the app only accepts the known voices and the five speeds the reader offers (0.75, 1.0, 1.25, 1.5, 2.0).
+The voice is part of audio paths, so the app only accepts the known voices.
+
+## Audio format and speed
+
+- Pages are MP3, mono, 64 kbps, which is plenty for speech and about 17% of the size of the old WAV files. Code: `app/audio_codec.py`.
+- Kokoro's samples are piped into ffmpeg (`subprocess` with an argument list, never a shell string), and the MP3 is written to a temp file and renamed, so a half-written page is never served.
+- The app checks at startup that ffmpeg with the MP3 encoder is installed, and stops with a clear message if not.
+- Audio is generated once per voice, always at speed 1.0. The reader page changes speed in the browser with `audioEl.playbackRate` (with `preservesPitch`), so changing speed never fetches or generates new audio. The chosen speed is kept between pages and saved in `progress.speed`, which only accepts the five speeds the reader offers (0.75, 1.0, 1.25, 1.5, 2.0).
+- `/audio` is served as `audio/mpeg`. `/audio` and `/readiness` take only `?voice=`.
 
 This keeps users' files apart:
 
@@ -100,10 +108,10 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/logout`                         | sign out (POST)                          |
 | `/upload`                         | upload a PDF and optional cover (POST)   |
 | `/read/<book_id>`                 | reader page                              |
-| `/audio/<book_id>/<page>`         | audio for one page                       |
+| `/audio/<book_id>/<page>?voice=`  | MP3 for one page                         |
 | `/cover/<book_id>`                | cover image                              |
 | `/status/<book_id>`               | background processing progress           |
-| `/readiness/<book_id>`            | which pages have audio ready             |
+| `/readiness/<book_id>?voice=`     | which pages have audio ready for a voice |
 | `/toc/<book_id>`                  | table of contents                        |
 | `/page_text/<book_id>/<page>`     | page text preview                        |
 | `/save_progress`                  | save page, speed, voice (POST, JSON with `book_id`) |
@@ -125,7 +133,7 @@ Code: `app/worker.py` (queue and worker), `app/tts_engine.py` (Kokoro and audio 
 
 1. After an upload is saved, the book row is created with `status = 'processing'` and its id is put on a queue. The upload request returns straight away.
 2. One worker thread takes book ids off the queue, one at a time, in upload order. Many uploads at once just make the queue longer instead of competing for the CPU.
-3. For each page the worker calls Kokoro, writes the audio file, and saves `books.pages_done` to the database. After the last page it sets `books.status` to `ready`.
+3. For each page the worker calls Kokoro (default voice, speed 1.0), encodes MP3, writes the file, and saves `books.pages_done` to the database. After the last page it sets `books.status` to `ready`.
 4. Pages that already have audio are skipped, so a book that is processed again resumes where it stopped.
 5. When the app starts (the first request, or `run.py` in the debug reloader's serving process), the worker starts and every book still marked `processing` is put back on the queue.
 6. If the reader asks for a page that isn't ready yet, `/audio` generates that one page on demand.
