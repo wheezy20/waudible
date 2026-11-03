@@ -912,3 +912,5 @@ audio#audio-player {
 }
 
 .auth-switch a:hover { color: var(--orange); }
+
+.upload-alert { margin: 0 0 16px; text-align: left; }

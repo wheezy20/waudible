@@ -6,6 +6,10 @@ Newest entry first.
 
 Where things stand at the start of the online version:
 
+- Made books private per user (step 3). Books and reading progress now live in the `books` and `progress` tables, and every file is stored under a random `storage_key` (`data/books/<key>.pdf`, `data/covers/<key>.<ext>`, `data/audio/<key>/`). Routes use book ids, every route except login and register needs login, and another user's book returns 404. Uploads are limited to 100 MB, must really be PDFs, covers must be real JPG, PNG or WebP under 5 MB, and each user can have 20 books.
+- Replaced the thread per book with one worker thread and a queue, so books are processed one at a time in upload order. Progress is saved to the database after every page, and unfinished books are re-queued on startup.
+- The running app no longer uses `book_sessions`, `app/db.py` or `app/session_manager.py`. They stay in place until Eyram confirms after testing. The two old local books are still on disk but not in anyone's library yet.
+
 - The local single-user app is built (Flask, Kokoro ONNX, PyMuPDF, genre shelves, cover art, background audio processing, auto-resume) and pushed to GitHub as `wheezy20/waudible`.
 - Started the `online-version` branch for the multi-user hosted version. `main` stays as the original local app.
 - Hosting search:

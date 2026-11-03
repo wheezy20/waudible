@@ -23,6 +23,14 @@
     <!-- ── UPLOAD SECTION ── -->
     <section class="upload-section">
         <h2 class="section-title">Add a Book</h2>
+
+        <!-- Upload errors -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            <p class="auth-alert upload-alert">{{ message }}</p>
+            {% endfor %}
+        {% endwith %}
+
         <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -78,13 +86,13 @@
                 <h3 class="shelf-title">{{ genre }}</h3>
                 <div class="shelf-row">
                     {% for book in books %}
-                    {% set card_id = book.filename | replace('.', '-') | replace(' ', '-') %}
+                    {% set card_id = book.id %}
                     <div class="book-card" id="card-{{ card_id }}">
 
                         <!-- Cover art (clickable) -->
-                        <a href="/read/{{ book.filename }}" class="cover-wrap">
+                        <a href="/read/{{ book.id }}" class="cover-wrap">
                             {% if book.cover %}
-                                <img src="/cover/{{ book.cover }}"
+                                <img src="/cover/{{ book.id }}"
                                      alt="{{ book.title }}" class="cover-img">
                             {% else %}
                                 <div class="cover-auto">
@@ -95,7 +103,7 @@
                             {% endif %}
 
                             <!-- Processing overlay -->
-                            {% if book.running or book.processed < book.pages %}
+                            {% if book.running and book.pages %}
                             <div class="cover-overlay">
                                 <div class="overlay-text">
                                     <span id="done-{{ card_id }}">{{ book.processed }}</span>/{{ book.pages }}
@@ -119,17 +127,17 @@
                                 Page {{ book.current_page + 1 }} of {{ book.pages }}
                             </p>
                             {% endif %}
-                            {% if not book.running and book.processed >= book.pages %}
+                            {% if not book.running %}
                             <p class="card-ready">✅ Ready</p>
                             {% endif %}
                         </div>
 
                         <!-- Actions -->
                         <div class="card-actions">
-                            <a href="/read/{{ book.filename }}" class="btn btn-primary btn-sm">
+                            <a href="/read/{{ book.id }}" class="btn btn-primary btn-sm">
                                 {% if book.current_page > 0 %}▶ Resume{% else %}▶ Play{% endif %}
                             </a>
-                            <form action="/delete/{{ book.filename }}" method="POST"
+                            <form action="/delete/{{ book.id }}" method="POST"
                                   onsubmit="return confirm('Delete this book and all its audio?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-danger btn-sm">🗑</button>
@@ -156,21 +164,20 @@
     const processing = [
         {% for genre, books in shelves.items() %}
             {% for book in books %}
-                {% if book.running or book.processed < book.pages %}
-                "{{ book.filename }}",
+                {% if book.running and book.pages %}
+                {{ book.id }},
                 {% endif %}
             {% endfor %}
         {% endfor %}
     ];
 
-    processing.forEach(filename => {
-        const safeId = filename.replace(/\./g, '-').replace(/ /g, '-');
-        const barEl  = document.getElementById('bar-'  + safeId);
-        const doneEl = document.getElementById('done-' + safeId);
+    processing.forEach(bookId => {
+        const barEl  = document.getElementById('bar-'  + bookId);
+        const doneEl = document.getElementById('done-' + bookId);
         if (!barEl || !doneEl) return;
 
         const interval = setInterval(async () => {
-            const res  = await fetch('/status/' + filename);
+            const res  = await fetch('/status/' + bookId);
             const data = await res.json();
             const pct  = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
             barEl.style.width  = pct + '%';

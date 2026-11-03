@@ -1,6 +1,6 @@
 # WAudible architecture
 
-Target design for the multi-user hosted version. Today the app is single-user: books are identified by their uploaded filename, files sit in shared folders, and progress lives in one `book_sessions` table. This document describes where it is going.
+Design of the multi-user hosted version. Accounts, per-user books, `storage_key` file storage and the processing queue are built. MP3 audio, hosting and the PWA are still to come (see PLAN.md).
 
 ## Overview
 
@@ -12,7 +12,7 @@ Cloudflare Tunnel  (waudio.eyramwilson.dev)
 Flask app (Flask-Login, Flask-SQLAlchemy)
    |-- Neon Postgres  (users, books, progress)
    |-- Local disk     (PDFs, covers, generated audio, all under storage_key)
-   |-- Kokoro ONNX    (loaded once per process, background thread per book)
+   |-- Kokoro ONNX    (loaded once per process, one worker thread and a queue)
 ```
 
 The app runs on the laptop first, reached through a Cloudflare Tunnel, and later on a VPS. Neon holds all structured data. Files stay on the server's disk.
@@ -65,13 +65,15 @@ Models live in `app/models.py`. `init_db.py` creates the tables.
 
 ## File storage and storage_key
 
-When a user uploads a PDF, the app generates a random `storage_key` (for example `secrets.token_urlsafe(16)`) and stores every file for that book under it:
+When a user uploads a PDF, the app generates a random `storage_key` (`secrets.token_hex(16)`) and stores every file for that book under it. Path helpers live in `app/storage.py`.
 
 ```
 data/books/<storage_key>.pdf
-data/covers/<storage_key>.<ext>
-data/audio/<storage_key>/page<N>_spd<speed>_v<voice>.mp3
+data/covers/<storage_key>.<ext>          (jpg, png or webp)
+data/audio/<storage_key>/page<N>_spd<speed>_v<voice>.wav   (.mp3 after step 4)
 ```
+
+Speed and voice are part of audio paths, so the app only accepts the known voices and the five speeds the reader offers (0.75, 1.0, 1.25, 1.5, 2.0).
 
 This keeps users' files apart:
 
@@ -86,11 +88,11 @@ Only these routes are public:
 
 | Route            | Purpose                 |
 |------------------|-------------------------|
-| `/signup`        | create an account       |
+| `/register`      | create an account (invite code) |
 | `/login`         | sign in                 |
 | `/static/...`    | CSS, JS, icons, PWA files |
 
-Everything else needs `@login_required` and an ownership check on the book:
+Everything else needs login. A single `before_request` check in `app/main.py` sends logged-out requests to `/login?next=...`, so new routes are private by default. Book routes also check ownership:
 
 | Route                             | Purpose                                  |
 |-----------------------------------|------------------------------------------|
@@ -104,24 +106,35 @@ Everything else needs `@login_required` and an ownership check on the book:
 | `/readiness/<book_id>`            | which pages have audio ready             |
 | `/toc/<book_id>`                  | table of contents                        |
 | `/page_text/<book_id>/<page>`     | page text preview                        |
-| `/save_progress`                  | save current page, speed, voice (POST)   |
+| `/save_progress`                  | save page, speed, voice (POST, JSON with `book_id`) |
 | `/delete/<book_id>`               | delete a book and all its files (POST)   |
 
-Routes take the book's database id rather than the filename, which also fixes today's problems with spaces and special characters in URLs.
+Routes take the book's database id rather than the filename, which also avoids problems with spaces and special characters in URLs.
+
+## Upload rules
+
+- The whole upload request is limited to 100 MB (`MAX_CONTENT_LENGTH`).
+- The file must start with `%PDF` and open in PyMuPDF. The extension alone is not trusted.
+- Covers must be JPG, PNG or WebP, checked by their first bytes, and at most 5 MB.
+- Each user can have at most 20 books.
+- Rejected uploads leave no files and no rows, and show a message on the home page.
 
 ## Background audio processing
 
-1. After an upload is saved, the app extracts every page's text with PyMuPDF and starts a daemon thread for that book.
-2. The thread walks through the pages in order. For each page it calls Kokoro, writes the audio file, and updates `books.pages_done`. When the last page is done it sets `books.status` to `ready`. A small in-memory record keyed by `storage_key` tracks whether a thread is running, so a second one is never started for the same book.
-3. Pages that already have audio are skipped, so restarting processing is cheap.
-4. If the reader asks for a page that isn't ready yet, `/audio` generates that one page on demand.
-5. The UI polls `/status` (which reads `status` and `pages_done` from the database) for the progress bar, and `/readiness` to see which pages can play.
-6. Deleting a book sets `running` to false, which stops the thread at the next page, and then removes the files.
+Code: `app/worker.py` (queue and worker), `app/tts_engine.py` (Kokoro and audio files).
+
+1. After an upload is saved, the book row is created with `status = 'processing'` and its id is put on a queue. The upload request returns straight away.
+2. One worker thread takes book ids off the queue, one at a time, in upload order. Many uploads at once just make the queue longer instead of competing for the CPU.
+3. For each page the worker calls Kokoro, writes the audio file, and saves `books.pages_done` to the database. After the last page it sets `books.status` to `ready`.
+4. Pages that already have audio are skipped, so a book that is processed again resumes where it stopped.
+5. When the app starts (the first request, or `run.py` in the debug reloader's serving process), the worker starts and every book still marked `processing` is put back on the queue.
+6. If the reader asks for a page that isn't ready yet, `/audio` generates that one page on demand.
+7. The UI polls `/status` (`total`, `done`, `running`, read from the database) for the progress bar, and `/readiness` to see which pages can play.
+8. Deleting a book marks its `storage_key` as cancelled and removes its audio folder, then deletes the rows and the other files. The worker checks before every page and stops. Writing a page and deleting a book share a lock, so a page that finishes during a delete is dropped instead of recreating the folder.
 
 The Kokoro model is loaded once per process when the app starts.
 
 Constraints that follow from this design:
 
-- The "thread is running" record lives in process memory, so the app must run as a single process (one worker, threads allowed). With several workers, each would load its own Kokoro model and could start duplicate threads. If that is ever needed, move to a job queue.
-- Processing progress (`pages_done`, `status`) survives a restart because it is in the database. A book left in `processing` after a restart needs its thread started again; since finished pages are skipped, it resumes where it stopped.
-- Several users uploading at once means several threads competing for the same CPU. On a laptop or small VPS, a queue that processes one book at a time is the likely next step.
+- The queue lives in process memory, so the app must run as a single process (one worker process, threads allowed). With several processes, each would load its own Kokoro model and run its own queue. If that is ever needed, move to a shared job queue.
+- The queue itself is lost on restart, but nothing else is: progress is in the database, and step 5 rebuilds the queue from it.

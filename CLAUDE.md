@@ -18,17 +18,18 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 
 ## Layout
 
-- `app/main.py`: Flask routes
-- `app/tts_engine.py`: loads Kokoro once, generates page audio, runs the background processing thread
+- `app/main.py`: Flask config and routes (login required everywhere except login and register, books looked up by id and owner)
+- `app/tts_engine.py`: loads Kokoro once, generates page audio, allowed voices and speeds
+- `app/worker.py`: the single background worker and its queue
+- `app/storage.py`: paths for files stored under each book's `storage_key`
 - `app/pdf_reader.py`: page text, page count, metadata, table of contents
-- `app/session_manager.py`: reading progress and book metadata
-- `app/db.py`: psycopg connection pool (current storage layer, to be replaced by Flask-SQLAlchemy)
+- `app/session_manager.py`, `app/db.py`: old single-user storage, no longer used by the app, kept until deletion is confirmed
 - `app/config.py`: `database_url(unpooled=False)` builds the SQLAlchemy URL from the Neon env vars
 - `app/auth.py`: `auth` blueprint (`/register`, `/login`, `/logout`), Flask-Login setup, forms
 - `app/models.py`: Flask-SQLAlchemy models (`User`, `Book`, `Progress`) and the shared `db` object
 - `init_db.py`: creates the `users`, `books` and `progress` tables (`python init_db.py`, safe to rerun)
 - `app/templates/`, `app/static/css/style.css`: UI
-- `migrate.py`, `migrations/`: old table creation for `book_sessions` (to be replaced once auth works)
+- `migrate.py`, `migrations/`: old table creation for `book_sessions`, no longer used, kept until deletion is confirmed
 - `data/books`, `data/covers`, `data/audio`: uploaded files and generated audio (gitignored)
 
 ## Running the app

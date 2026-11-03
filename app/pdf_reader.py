@@ -11,6 +11,13 @@ def extract_pages(pdf_path: str) -> list[str]:
     return pages
 
 
+def extract_page(pdf_path: str, page: int) -> str:
+    """Extract text from one page (0-based)."""
+    with fitz.open(pdf_path) as doc:
+        text = doc[page].get_text().strip()
+    return text if text else "[This page has no readable text]"
+
+
 def get_page_count(pdf_path: str) -> int:
     with fitz.open(pdf_path) as doc:
         return len(doc)

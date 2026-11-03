@@ -39,8 +39,8 @@
         <!-- Book hero -->
         <section class="book-hero">
             <div class="book-cover-hero">
-                {% if progress.cover %}
-                    <img src="/cover/{{ progress.cover }}"
+                {% if book.cover %}
+                    <img src="/cover/{{ book.id }}"
                          alt="{{ info.title }}" class="hero-cover-img">
                 {% else %}
                     <div class="hero-cover-auto">
@@ -54,7 +54,7 @@
                 <h2>{{ info.title }}</h2>
                 <p class="book-author">{{ info.author }}</p>
                 <p class="book-pages">{{ total_pages }} pages total</p>
-                <p class="book-genre">{{ progress.genre }}</p>
+                <p class="book-genre">{{ book.genre }}</p>
             </div>
         </section>
 
@@ -80,11 +80,10 @@
                 <div class="speed-wrap">
                     <label for="speed">Speed</label>
                     <select id="speed" onchange="reloadAudio()">
-                        <option value="0.75">0.75×</option>
-                        <option value="1.0" selected>1.0×</option>
-                        <option value="1.25">1.25×</option>
-                        <option value="1.5">1.5×</option>
-                        <option value="2.0">2.0×</option>
+                        {% for s in speeds %}
+                        <option value="{{ s }}"
+                            {% if s == progress.speed %}selected{% endif %}>{{ s }}×</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <button class="btn btn-control" id="btn-next" onclick="changePage(1)">
@@ -125,7 +124,7 @@
 </div>
 
 <script>
-    const FILENAME    = "{{ filename }}";
+    const BOOK_ID     = {{ book.id }};
     const TOTAL_PAGES = {{ total_pages }};
     let   currentPage = {{ progress.current_page }};
     let   readyPages  = new Set();
@@ -150,7 +149,7 @@
 
         const speed    = speedEl.value;
         const voice    = voiceEl.value;
-        const audioUrl = `/audio/${FILENAME}/${currentPage}?speed=${speed}&voice=${voice}`;
+        const audioUrl = `/audio/${BOOK_ID}/${currentPage}?speed=${speed}&voice=${voice}`;
 
         if (readyPages.has(currentPage)) {
             statusEl.textContent = "Playing page " + (currentPage + 1);
@@ -206,7 +205,7 @@
     // ── FETCH PAGE TEXT ──
     async function fetchPageText(page) {
         try {
-            const res  = await fetch(`/page_text/${FILENAME}/${page}`);
+            const res  = await fetch(`/page_text/${BOOK_ID}/${page}`);
             const data = await res.json();
             textBoxEl.textContent = data.text || "[No text on this page]";
         } catch {
@@ -223,7 +222,7 @@
                 'X-CSRFToken' : document.querySelector('meta[name="csrf-token"]').content,
             },
             body   : JSON.stringify({
-                filename: FILENAME,
+                book_id : BOOK_ID,
                 page    : currentPage,
                 speed   : parseFloat(speedEl.value),
                 voice   : voiceEl.value,
@@ -233,7 +232,7 @@
 
     // ── LOAD TOC ──
     async function loadToc() {
-        const res      = await fetch(`/toc/${FILENAME}`);
+        const res      = await fetch(`/toc/${BOOK_ID}`);
         const chapters = await res.json();
         tocList.innerHTML = '';
 
@@ -275,7 +274,7 @@
     async function updateTocReadiness() {
         const speed = speedEl.value;
         const voice = voiceEl.value;
-        const res   = await fetch(`/readiness/${FILENAME}?speed=${speed}&voice=${voice}`);
+        const res   = await fetch(`/readiness/${BOOK_ID}?speed=${speed}&voice=${voice}`);
         const data  = await res.json();
         readyPages  = new Set(data.ready);
 
@@ -306,7 +305,7 @@
     // ── POLL READINESS EVERY 5 SECONDS WHILE PROCESSING ──
     const readinessInterval = setInterval(async () => {
         await updateTocReadiness();
-        const res  = await fetch(`/status/${FILENAME}`);
+        const res  = await fetch(`/status/${BOOK_ID}`);
         const data = await res.json();
         if (!data.running) clearInterval(readinessInterval);
     }, 5000);
