@@ -9,6 +9,7 @@ from app.tts_engine import (text_to_audio, list_voices, get_audio_path,
                             delete_book_audio, VOICES, SPEEDS)
 from app.storage import (new_storage_key, pdf_path, cover_path,
                          remove_book_files)
+from app.artwork import ARTWORK_SIZES, cover_artwork, fallback_artwork
 from app.worker import enqueue, start_worker
 from app.config import database_url
 from app.models import db, Book, Progress
@@ -348,7 +349,25 @@ def upload():
 @app.route('/cover/<int:book_id>')
 def cover(book_id):
     book = _get_book(book_id)
-    if not book.cover or not os.path.exists(cover_path(book.cover)):
+    has_cover = bool(book.cover) and os.path.exists(cover_path(book.cover))
+
+    # ?size=96|192|512: square PNG for the lock screen (Media Session),
+    # with a generated fallback when the book has no cover
+    size = request.args.get('size')
+    if size is not None:
+        if not size.isdigit() or int(size) not in ARTWORK_SIZES:
+            abort(400)
+        size = int(size)
+        try:
+            png = cover_artwork(cover_path(book.cover), size) if has_cover else None
+        except Exception:
+            png = None   # unreadable cover: fall back to initials
+        png = png or fallback_artwork(book.title, size)
+        response = app.response_class(png, mimetype='image/png')
+        response.headers['Cache-Control'] = 'private, max-age=86400'
+        return response
+
+    if not has_cover:
         abort(404)
     return send_file(cover_path(book.cover))
 

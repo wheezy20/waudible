@@ -138,6 +138,8 @@
 
 <script>
     const BOOK_ID     = {{ book.id }};
+    const BOOK_TITLE  = {{ info.title | tojson }};
+    const BOOK_AUTHOR = {{ (info.author or "") | tojson }};
     const TOTAL_PAGES = {{ total_pages }};
     let   currentPage = {{ progress.current_page }};
     let   readyPages  = new Set();
@@ -186,9 +188,11 @@
             statusEl.textContent = "Generating audio for page " + (currentPage + 1) + "... please wait";
         }
 
+        // Same audio element for the whole session (keeps the lock-screen
+        // player alive). Setting src starts loading; play() right away.
         audioEl.src = audioUrl;
-        audioEl.load();
         setPlaybackRate();
+        updateMediaSession();
 
         if (autoplay) {
             audioEl.play().catch(() => {
@@ -209,9 +213,12 @@
         audioEl.onended = () => {
             saveProgress();
             if (currentPage + 1 < TOTAL_PAGES) {
+                // New src and play() inside the ended handler, so the
+                // browser keeps the playback session (and lock screen) alive
                 changePage(1);
             } else {
                 statusEl.textContent = "🎉 You've reached the end!";
+                setPlaybackState('paused');
             }
         };
 
@@ -265,6 +272,9 @@
         const res      = await fetch(`/toc/${BOOK_ID}`);
         const chapters = await res.json();
         tocList.innerHTML = '';
+        // PDFs without a contents list get "Page N" entries every 10 pages;
+        // only real chapter titles are used on the lock screen
+        tocChapters = chapters.every(ch => /^Page \d+$/.test(ch.title)) ? [] : chapters;
 
         if (!chapters.length) {
             tocList.innerHTML = '<p class="toc-loading">No contents found.</p>';
@@ -298,6 +308,7 @@
 
         updateTocReadiness();
         highlightTocItem(currentPage);
+        updateMediaSession();
     }
 
     // ── FETCH READINESS + UPDATE TOC DOTS ──
@@ -377,6 +388,111 @@
         const data = await res.json();
         if (!data.running) clearInterval(readinessInterval);
     }, 5000);
+
+    // ── LOCK SCREEN AND NOTIFICATION CONTROLS (Media Session API) ──
+    const mediaSession = ('mediaSession' in navigator) ? navigator.mediaSession : null;
+    let   tocChapters  = [];
+
+    function chapterTitle(page) {
+        let title = null;
+        for (const ch of tocChapters) {
+            if (ch.page <= page) title = ch.title;
+        }
+        return title;
+    }
+
+    function updateMediaSession() {
+        if (!mediaSession || typeof MediaMetadata === 'undefined') return;
+        mediaSession.metadata = new MediaMetadata({
+            title  : chapterTitle(currentPage) || `Page ${currentPage + 1} of ${TOTAL_PAGES}`,
+            artist : BOOK_AUTHOR,
+            album  : BOOK_TITLE,
+            artwork: [96, 192, 512].map(size => ({
+                src  : `/cover/${BOOK_ID}?size=${size}`,
+                sizes: `${size}x${size}`,
+                type : 'image/png',
+            })),
+        });
+    }
+
+    function setPlaybackState(state) {
+        if (mediaSession) mediaSession.playbackState = state;
+    }
+
+    function updatePositionState() {
+        if (!mediaSession || !mediaSession.setPositionState) return;
+        const duration = audioEl.duration;
+        if (!isFinite(duration) || duration <= 0) return;
+        try {
+            mediaSession.setPositionState({
+                duration    : duration,
+                playbackRate: audioEl.playbackRate,
+                position    : Math.min(Math.max(audioEl.currentTime, 0), duration),
+            });
+        } catch (e) { /* ignore browsers that reject a value */ }
+    }
+
+    function seekBy(seconds) {
+        const end = isFinite(audioEl.duration) ? audioEl.duration : Infinity;
+        audioEl.currentTime = Math.min(Math.max(audioEl.currentTime + seconds, 0), end);
+        updatePositionState();
+    }
+
+    if (mediaSession) {
+        const handlers = {
+            play         : () => audioEl.play(),
+            pause        : () => audioEl.pause(),
+            previoustrack: () => changePage(-1),
+            nexttrack    : () => changePage(1),
+            seekbackward : details => seekBy(-((details && details.seekOffset) || 15)),
+            seekforward  : details => seekBy((details && details.seekOffset) || 15),
+            seekto       : details => {
+                if (details.fastSeek && 'fastSeek' in audioEl) audioEl.fastSeek(details.seekTime);
+                else audioEl.currentTime = details.seekTime;
+                updatePositionState();
+            },
+        };
+        for (const [action, handler] of Object.entries(handlers)) {
+            try { mediaSession.setActionHandler(action, handler); }
+            catch (e) { /* action not supported by this browser */ }
+        }
+    }
+
+    audioEl.addEventListener('play',  () => setPlaybackState('playing'));
+    audioEl.addEventListener('pause', () => {
+        // The pause that comes with a page ending is followed straight away
+        // by the next page, so don't flash "paused" on the lock screen
+        if (!audioEl.ended) setPlaybackState('paused');
+    });
+    for (const ev of ['timeupdate', 'loadedmetadata', 'ratechange', 'seeked']) {
+        audioEl.addEventListener(ev, updatePositionState);
+    }
+
+    // ── PRELOAD THE NEXT PAGE ──
+    // Halfway through a page, a hidden, muted audio object (never played,
+    // not on the page) buffers the next page. The browser shares buffered
+    // media between elements with the same URL, so when the player moves
+    // on it starts from that buffer. Only pages whose audio already exists
+    // are preloaded, so this never starts generation. A different voice
+    // means a different URL, so a stale preload is simply not used.
+    const preloadEl = new Audio();
+    preloadEl.preload = 'auto';
+    preloadEl.muted   = true;
+    let preloadedKey  = null;
+
+    function maybePreloadNext() {
+        const duration = audioEl.duration;
+        if (!isFinite(duration) || duration <= 0 || audioEl.currentTime < duration / 2) return;
+        const next = currentPage + 1;
+        if (next >= TOTAL_PAGES || !readyPages.has(next)) return;
+        const key = `${next}|${voiceEl.value}`;
+        if (key === preloadedKey) return;
+        preloadedKey = key;
+        preloadEl.src = `/audio/${BOOK_ID}/${next}?voice=${voiceEl.value}`;
+        preloadEl.load();
+    }
+
+    audioEl.addEventListener('timeupdate', maybePreloadNext);
 
     // ── START ──
     loadToc();

@@ -72,6 +72,15 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Reader: contents as a slide-up drawer, large Prev/Next, full-width audio, speed, voice and jump in a grid, page text collapsed on phones
 - [x] Checked with headless Chrome at 360x640, 390x844 and 768x1024; desktop pixel-identical to before
 
+## Background and lock-screen playback
+
+- [x] Media Session metadata on every page: chapter title (or "Page N of M"), book title as album, author as artist
+- [x] Square lock-screen artwork at 96, 192 and 512 px from `/cover/<id>?size=`, with a generated fallback for books without a cover
+- [x] Lock-screen controls: play, pause, previous and next page, seek 15 s back and forward, seek to a position; position and playback state kept up to date
+- [x] One audio element for the whole session; the next page starts inside the `ended` handler
+- [x] Next page preloaded halfway through the current one (only when its audio already exists)
+- [ ] Eyram checks the lock screen and notification controls on a real phone
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker
