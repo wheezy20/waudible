@@ -21,7 +21,10 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/main.py`: Flask config and routes (login required everywhere except login and register, books looked up by id and owner)
 - `app/tts_engine.py`: loads Kokoro once, generates page audio (MP3, speed 1.0, one file per voice), allowed voices and speeds
 - `app/audio_codec.py`: ffmpeg MP3 encoding and the startup ffmpeg check
-- `convert_wav_to_mp3.py`: one-off conversion of old WAV pages, to be deleted once it has been run
+- `app/limiter.py`: Flask-Limiter setup and the limits for login, sign-up and uploads
+- `app/templates/error.html`: friendly error pages
+- `gunicorn.conf.py`, `run_prod.sh`: production server
+- `deploy/`: systemd unit (`waudible.service`) and install steps (`README.md`)
 - `app/worker.py`: the single background worker and its queue
 - `app/storage.py`: paths for files stored under each book's `storage_key`
 - `app/pdf_reader.py`: page text, page count, metadata, table of contents
@@ -46,11 +49,20 @@ pip install -r requirements.txt
 # Kokoro model files go in the repo root (see README.md for the download links)
 ```
 
-Run it:
+Run it locally (development):
 
 ```bash
-./run.sh            # activates venv, runs python run.py on http://localhost:5000
+./run.sh                     # http://localhost:5000, secure cookies off for plain http
+WAUDIBLE_DEBUG=1 ./run.sh    # with the Flask debugger and reloader
 ```
+
+Production (see `deploy/README.md`):
+
+```bash
+./run_prod.sh       # gunicorn, 1 worker process, 4 threads, 127.0.0.1:8000 only
+```
+
+Keep `workers = 1` in `gunicorn.conf.py`: the Kokoro model and the audio queue must exist only once. Never bind to `0.0.0.0`; the Cloudflare Tunnel connects locally.
 
 Startup takes a few seconds because the Kokoro model loads at import time.
 
@@ -68,4 +80,6 @@ Startup takes a few seconds because the Kokoro model loads at import time.
 - Never print, echo, log or commit anything from `.env` (connection strings, passwords, secret keys). When a value must be checked, mask it.
 - No em dashes or en dashes anywhere: prose, docs, code comments, commit messages or UI text. Use commas or parentheses instead.
 - No `Co-Authored-By` or `Claude-Session` trailers in commit messages.
+- Tests that write to the database run on a temporary Neon branch, never production: export the branch's `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for the test process only, never edit `.env`.
+- Debug stays off in production. Don't add `WAUDIBLE_DEBUG` or `WAUDIBLE_SECURE_COOKIES=0` to the service.
 - Keep `PLAN.md` checkboxes current and add a dated entry at the top of `JOURNAL.md` when something significant happens.

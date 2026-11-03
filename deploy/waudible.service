@@ -1,0 +1,31 @@
+[Unit]
+Description=WAudible audiobook player (gunicorn on 127.0.0.1:8000)
+Wants=network-online.target
+After=network-online.target
+# Give up if it fails 5 times in 5 minutes (for example a missing
+# SECRET_KEY or ffmpeg), instead of restarting forever
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=wheezy20
+Group=wheezy20
+WorkingDirectory=/home/wheezy20/pdf-audiobook-player
+ExecStart=/home/wheezy20/pdf-audiobook-player/run_prod.sh
+Environment=PYTHONUNBUFFERED=1
+
+# Restart after a crash (the start limits above stop a restart loop)
+Restart=on-failure
+RestartSec=5
+
+# Let a page that is being generated finish before stopping
+TimeoutStopSec=60
+
+# Basic hardening (the app only writes inside its own folder)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

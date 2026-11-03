@@ -12,6 +12,7 @@ from wtforms import StringField, PasswordField, HiddenField
 from wtforms.validators import (DataRequired, Length, Regexp,
                                 EqualTo, ValidationError)
 from app.models import db, User
+from app.limiter import limiter, AUTH_LIMIT
 
 auth = Blueprint("auth", __name__)
 
@@ -98,6 +99,7 @@ class RegisterForm(FlaskForm):
 # SIGN UP
 # ─────────────────────────────────────────
 @auth.route("/register", methods=["GET", "POST"])
+@limiter.limit(AUTH_LIMIT, methods=["POST"])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
@@ -129,6 +131,7 @@ def register():
 # LOG IN
 # ─────────────────────────────────────────
 @auth.route("/login", methods=["GET", "POST"])
+@limiter.limit(AUTH_LIMIT, methods=["POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("index"))

@@ -45,14 +45,22 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Serve MP3 as `audio/mpeg`
 - [x] Generate once per voice at speed 1.0; the browser changes speed with `playbackRate`
 - [x] Check for ffmpeg at startup
-- [ ] Eyram runs `convert_wav_to_mp3.py` on the existing WAV files
-- [ ] Delete `convert_wav_to_mp3.py` from the repo after it has been run
+- [x] Eyram runs `convert_wav_to_mp3.py` on the existing WAV files
+- [x] Delete `convert_wav_to_mp3.py` from the repo after it has been run
 
 ## 5. Go live at waudio.eyramwilson.dev
 
-- [ ] Cloudflare Tunnel from the laptop to the Flask app
+- [x] Production server: gunicorn, 1 worker process, 4 threads, 120 s timeout, on 127.0.0.1:8000 only (`run_prod.sh`, `gunicorn.conf.py`)
+- [x] Audio queue worker starts under gunicorn and re-queues unfinished books
+- [x] ProxyFix for Cloudflare's headers; debug off unless `WAUDIBLE_DEBUG=1`
+- [x] Secure, HttpOnly, SameSite=Lax cookies (`WAUDIBLE_SECURE_COOKIES=0` for local http)
+- [x] Security headers (nosniff, frame DENY, Referrer-Policy, CSP)
+- [x] Rate limits: login and sign-up 10 per minute per IP, uploads 20 per hour per IP
+- [x] Friendly 400, 404, 413, 429 and 500 pages
+- [x] systemd unit and install steps in `deploy/`
+- [ ] Install the systemd service (`deploy/README.md`)
+- [ ] Cloudflare Tunnel from the laptop to `http://127.0.0.1:8000`
 - [ ] DNS for `waudio.eyramwilson.dev`
-- [ ] Production server setup (not the Flask debug server)
 - [ ] Move to a VPS later
 
 ## 6. PWA offline mode

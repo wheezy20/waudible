@@ -3,6 +3,7 @@ from flask import (Flask, render_template, request, abort, flash,
                    send_file, redirect, url_for, jsonify)
 from flask_login import current_user
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.pdf_reader import extract_page, get_book_info, extract_toc
 from app.tts_engine import (text_to_audio, list_voices, get_audio_path,
                             delete_book_audio, VOICES, SPEEDS)
@@ -12,8 +13,27 @@ from app.worker import enqueue, start_worker
 from app.config import database_url
 from app.models import db, Book, Progress
 from app.auth import auth, login_manager
+from app.limiter import limiter, UPLOAD_LIMIT
 
 app = Flask(__name__)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Debug is off unless WAUDIBLE_DEBUG=1 (only ever for local development)
+DEBUG = _env_flag("WAUDIBLE_DEBUG", False)
+# Secure cookies are on unless WAUDIBLE_SECURE_COOKIES=0 (local http testing)
+SECURE_COOKIES = _env_flag("WAUDIBLE_SECURE_COOKIES", True)
+
+# Behind the Cloudflare Tunnel: trust one proxy hop for the client
+# address, scheme and host. gunicorn listens on 127.0.0.1 only, so
+# these headers can only come from cloudflared on this machine.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # ─────────────────────────────────────────
 # CONFIG (secrets come from .env)
@@ -22,6 +42,17 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY is not set in .env (see .env.example)")
 app.config["SECRET_KEY"] = SECRET_KEY
+app.config["DEBUG"]      = DEBUG
+
+# Session cookie: not readable by JavaScript, not sent on cross-site
+# requests, and only over HTTPS in production
+app.config["SESSION_COOKIE_HTTPONLY"]  = True
+app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
+app.config["SESSION_COOKIE_SECURE"]    = SECURE_COOKIES
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_SECURE"]   = SECURE_COOKIES
+app.config["PREFERRED_URL_SCHEME"]     = "https" if SECURE_COOKIES else "http"
 
 # Pooled Neon URL for the running app. PgBouncer runs in transaction
 # mode, so server-side prepared statements stay off.
@@ -68,15 +99,104 @@ def require_login():
     return login_manager.unauthorized()
 
 
-# Registered after require_login, so a logged-out POST is sent to the
-# login page instead of failing the CSRF check
+# Both registered after require_login, so a logged-out POST is sent to
+# the login page first. Route limits are checked when the view runs,
+# after the CSRF check, so only requests with a valid token count (the
+# others never reach the password check).
+limiter.init_app(app)
 CSRFProtect(app)
+
+
+# ─────────────────────────────────────────
+# SECURITY HEADERS
+# The pages use inline <script> blocks, inline event handlers
+# (onclick=...) and inline styles, so the CSP allows 'unsafe-inline'
+# for scripts and styles. Everything else is same-origin, apart from
+# Google Fonts.
+# ─────────────────────────────────────────
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "media-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+
+
+@app.after_request
+def security_headers(response):
+    response.headers["X-Content-Type-Options"]  = "nosniff"
+    response.headers["X-Frame-Options"]         = "DENY"
+    response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = CSP
+    return response
+
+
+# ─────────────────────────────────────────
+# ERROR PAGES
+# Friendly pages, never a stack trace
+# ─────────────────────────────────────────
+ERROR_PAGES = {
+    400: ("Something went wrong with that request",
+          "Please go back, refresh the page and try again."),
+    404: ("Page not found",
+          "That page or book doesn't exist, or it isn't in your library."),
+    413: ("That file is too large",
+          "Uploads can be at most 100 MB."),
+    429: ("Slow down a little",
+          "Too many attempts in a short time. Please wait a minute and try again."),
+    500: ("Something went wrong on our side",
+          "The problem has been logged. Please try again in a moment."),
+}
+
+
+def _error_page(code: int):
+    title, message = ERROR_PAGES[code]
+    return render_template('error.html', code=code, title=title, message=message), code
+
+
+@app.errorhandler(400)
+def bad_request(_error):
+    return _error_page(400)
+
+
+@app.errorhandler(404)
+def not_found(_error):
+    return _error_page(404)
 
 
 @app.errorhandler(413)
 def too_large(_error):
-    flash("That file is too large. PDFs can be at most 100 MB.", "error")
-    return redirect(url_for('index'))
+    # Uploads go back to the library with a message; anything else
+    # gets the error page
+    if request.endpoint == 'upload':
+        flash("That file is too large. PDFs can be at most 100 MB.", "error")
+        return redirect(url_for('index'))
+    return _error_page(413)
+
+
+@app.errorhandler(429)
+def too_many_requests(_error):
+    if request.endpoint == 'upload':
+        flash("Too many uploads in a short time. Please try again later.", "error")
+        return redirect(url_for('index'))
+    return _error_page(429)
+
+
+@app.errorhandler(500)
+def server_error(_error):
+    # The real exception is logged by Flask (and gunicorn's error log)
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    return _error_page(500)
 
 
 def _get_book(book_id: int) -> Book:
@@ -143,6 +263,7 @@ def index():
 # UPLOAD PDF + OPTIONAL COVER
 # ─────────────────────────────────────────
 @app.route('/upload', methods=['POST'])
+@limiter.limit(UPLOAD_LIMIT)
 def upload():
     file = request.files.get('pdf')
     if not file or not file.filename:
@@ -365,4 +486,4 @@ def delete_book(book_id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=DEBUG, port=5000)

@@ -12,10 +12,51 @@ Cloudflare Tunnel  (waudio.eyramwilson.dev)
 Flask app (Flask-Login, Flask-SQLAlchemy)
    |-- Neon Postgres  (users, books, progress)
    |-- Local disk     (PDFs, covers, generated audio, all under storage_key)
-   |-- Kokoro ONNX    (loaded once per process, one worker thread and a queue)
+   |-- Kokoro ONNX    (loaded once, one worker thread and a queue)
 ```
 
 The app runs on the laptop first, reached through a Cloudflare Tunnel, and later on a VPS. Neon holds all structured data. Files stay on the server's disk.
+
+## Production server
+
+```
+Internet -> Cloudflare -> cloudflared (tunnel) -> gunicorn 127.0.0.1:8000 -> Flask app
+```
+
+- `run_prod.sh` starts gunicorn with `gunicorn.conf.py`: exactly **one worker process** (the Kokoro model and the audio queue must exist once), 4 threads, a 120 second timeout (audio can be generated on demand), bound to `127.0.0.1:8000` only. It is never exposed on `0.0.0.0`; only cloudflared on the same machine connects to it.
+- gunicorn's `post_worker_init` hook starts the audio queue worker in the worker process, which re-queues unfinished books straight away (before any request).
+- systemd runs `run_prod.sh` as `wheezy20` and restarts it on failure (`deploy/waudible.service`, install steps in `deploy/README.md`).
+- `run.sh` and `run.py` are only for local development on `http://localhost:5000`.
+
+### Settings from the environment
+
+| Variable                  | Default | Meaning                                                    |
+|---------------------------|---------|------------------------------------------------------------|
+| `WAUDIBLE_DEBUG`          | off     | `1` turns on the Flask debugger. Never in production.       |
+| `WAUDIBLE_SECURE_COOKIES` | on      | `0` allows cookies over plain http (`run.sh` sets this).    |
+
+### Behind the tunnel
+
+- `ProxyFix` trusts one proxy hop (`X-Forwarded-For`, `-Proto`, `-Host`), so the app sees the real client address and `https`. Only the last `X-Forwarded-For` value is used, so a value the client adds itself is ignored. This is safe only because gunicorn listens on 127.0.0.1.
+- Over https, Flask-WTF also checks that the `Referer` of a form post or `fetch` is this site. Browsers send it, because the Referrer-Policy keeps the full referrer for same-origin requests.
+
+### Cookies and headers
+
+- Session cookie: `Secure` (https only), `HttpOnly`, `SameSite=Lax`.
+- Every response gets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` and a Content-Security-Policy: same-origin for everything except Google Fonts (`fonts.googleapis.com` for the stylesheet, `fonts.gstatic.com` for font files), `frame-ancestors 'none'`, `object-src 'none'`. Scripts and styles allow `'unsafe-inline'` because the pages use inline `<script>` blocks, `onclick=` handlers and `style=` attributes. Moving the JavaScript into static files would let the CSP drop `'unsafe-inline'` for scripts.
+
+### Rate limits
+
+Flask-Limiter, in-memory storage (fine with one process), keyed by the real client IP:
+
+- `POST /login` and `POST /register`: 10 per minute. Requests that fail the CSRF check get a 400 and don't count, because they never reach the password check.
+- `POST /upload`: 20 per hour. Over the limit, the library shows a message.
+
+Limits reset when the app restarts.
+
+### Error pages
+
+`app/templates/error.html` shows friendly pages for 400, 404, 413, 429 and 500, never a stack trace (debug is off; the real error goes to the log). Uploads that are too large or over the rate limit go back to the library with a message instead. Error pages don't touch the database, so they render even if Neon is unreachable.
 
 ## Database
 

@@ -914,3 +914,22 @@ audio#audio-player {
 .auth-switch a:hover { color: var(--orange); }
 
 .upload-alert { margin: 0 0 16px; text-align: left; }
+
+/* ── ERROR PAGES ── */
+.logo-link { text-decoration: none; }
+
+.error-card { text-align: center; }
+
+.error-code {
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--orange);
+    letter-spacing: -2px;
+    margin-bottom: 16px;
+}
+
+.error-home {
+    display: flex;
+    margin-top: 28px;
+}

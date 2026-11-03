@@ -6,6 +6,8 @@ Newest entry first.
 
 Where things stand at the start of the online version:
 
+- Prepared WAudible to be served from the internet (step 5, app side). It now runs under gunicorn (one worker process, four threads, 120 second timeout) on 127.0.0.1:8000 only, started by `run_prod.sh` or the systemd unit in `deploy/`. The audio queue starts inside the gunicorn worker and re-queues unfinished books. Added ProxyFix for the tunnel's headers, debug off by default, Secure/HttpOnly/SameSite=Lax cookies, security headers with a CSP, rate limits with Flask-Limiter (login and sign-up 10 per minute, uploads 20 per hour, per real client IP) and friendly error pages. Eyram ran the WAV to MP3 conversion, so the script is deleted. All three test suites (139 checks) pass on the temporary Neon branch. Not installed yet: the systemd service and the tunnel.
+
 - Shrank audio storage (step 4). Pages are now MP3 (mono, 64 kbps, made with ffmpeg) instead of WAV, about 17% of the size: a 3-page test book went from 1647 KB of WAV to 276 KB of MP3. Audio is generated once per voice at speed 1.0, and the reader changes speed in the browser, so a speed change no longer generates new audio. Added `convert_wav_to_mp3.py` to convert the existing WAV files; on a copy of book 68's first 9 pages it turned 76.1 MB into 12.7 MB.
 - Tests now run against a temporary schema-only Neon branch instead of production. The test process gets the branch's connection strings in its own environment, and `.env` keeps pointing at production. Branch `tests-mp3-20261103` expires on 4 Nov 2026 at 23:59 UTC.
 
