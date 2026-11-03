@@ -81,6 +81,14 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Next page preloaded halfway through the current one (only when its audio already exists)
 - [ ] Eyram checks the lock screen and notification controls on a real phone
 
+## Spotify-style redesign
+
+- [x] Player: large square cover with a colour glow from the cover, our own seek bar and controls (speed, 15 s back and forward, play/pause, sleep timer), previous/next page, Contents and More sheets, page text as a full-height sheet
+- [x] Home: Continue listening row, genre filter chips, square covers with a progress line, three-dot menu with a delete confirm step, processing ring on covers
+- [x] Add a book in a bottom sheet (bottom bar on phones, floating button on tablets and desktop)
+- [x] Shared bottom sheets: grab handle, close on outside tap, swipe down or Escape, focus kept inside
+- [x] Reduced motion respected, 44px tap targets, 16px inputs
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker

@@ -1,192 +1,275 @@
+{% from "_icons.html" import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#121212">
     <title>WAudible</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="home-body">
 
-<header>
+{% macro cover_img(book, size_hint="") -%}
+    {%- if book.cover -%}
+        <img src="/cover/{{ book.id }}" alt="" class="cover-img" loading="lazy" decoding="async">
+    {%- else -%}
+        <img src="/cover/{{ book.id }}?size=512" alt="" class="cover-img" loading="lazy" decoding="async">
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro book_card(book, cls="") -%}
+<article class="book-card {{ cls }}" data-book-id="{{ book.id }}">
+    <a href="/read/{{ book.id }}" class="card-cover" aria-label="{{ book.title }}">
+        {{ cover_img(book) }}
+        {% if book.running and book.pages %}
+        <!-- Audio still being prepared -->
+        <span class="cover-processing" id="proc-{{ cls }}{{ book.id }}"
+              style="--p: {{ ((book.processed / book.pages) * 100) | round }}%"
+              aria-label="Preparing audio, {{ book.processed }} of {{ book.pages }} pages"></span>
+        {% endif %}
+    </a>
+    <div class="card-progress" role="progressbar" aria-label="Page {{ book.current_page + 1 }} of {{ book.pages }}"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ book.percent }}">
+        <span style="width: {{ book.percent }}%"></span>
+    </div>
+    <div class="card-meta">
+        <p class="card-title">{{ book.title }}</p>
+        <button type="button" class="icon-btn card-more" data-book-id="{{ book.id }}"
+                data-title="{{ book.title }}" aria-label="More options for {{ book.title }}"
+                aria-haspopup="dialog" aria-controls="book-sheet">{{ icon("more", 20) }}</button>
+    </div>
+</article>
+{%- endmacro %}
+
+<header class="app-header">
     <div class="header-inner">
-        <div class="logo">
-            <span class="logo-w">W</span>Audible
-        </div>
+        <a href="/" class="logo logo-link"><span class="logo-w">W</span>Audible</a>
         <p class="tagline">Your personal audiobook library</p>
         {% include "_user_nav.html" %}
     </div>
 </header>
 
-<main>
+<main class="home-main" id="top">
 
-    <!-- ── UPLOAD SECTION ── -->
-    <section class="upload-section">
-        <h2 class="section-title">Add a Book</h2>
+    {% if shelves %}
 
-        <!-- Upload errors -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% for category, message in messages %}
-            <p class="auth-alert upload-alert">{{ message }}</p>
-            {% endfor %}
-        {% endwith %}
+        {% if continue_listening %}
+        <!-- ── CONTINUE LISTENING ── -->
+        <section class="home-section" aria-labelledby="continue-title">
+            <h2 class="section-heading" id="continue-title">Continue listening</h2>
+            <div class="card-row">
+                {% for book in continue_listening %}
+                    {{ book_card(book, "c") }}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
 
-        <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <!-- ── LIBRARY ── -->
+        <section class="home-section" id="library" aria-labelledby="library-title">
+            <h2 class="section-heading" id="library-title">Your library</h2>
 
-            <!-- PDF upload -->
-            <div class="form-group">
-                <label class="form-label">PDF File *</label>
-                <label class="file-label" id="pdf-label">
-                    <span class="file-icon">📄</span>
-                    <span id="pdf-chosen">Choose a PDF file...</span>
-                    <input type="file" name="pdf" accept=".pdf" required
-                           onchange="document.getElementById('pdf-chosen').textContent = this.files[0].name">
-                </label>
+            <!-- Genre filter chips -->
+            <div class="chips" role="toolbar" aria-label="Filter by genre">
+                <button type="button" class="chip is-active" data-filter="" aria-pressed="true">All</button>
+                {% for genre in shelves.keys() %}
+                <button type="button" class="chip" data-filter="{{ genre }}" aria-pressed="false">{{ genre }}</button>
+                {% endfor %}
             </div>
 
-            <!-- Cover image upload -->
-            <div class="form-group">
-                <label class="form-label">Cover Image (optional)</label>
-                <label class="file-label" id="cover-label">
-                    <span class="file-icon">🖼</span>
-                    <span id="cover-chosen">Upload cover image...</span>
-                    <input type="file" name="cover" accept=".jpg,.jpeg,.png,.webp"
-                           onchange="document.getElementById('cover-chosen').textContent = this.files[0].name">
-                </label>
-            </div>
-
-            <!-- Genre selector -->
-            <div class="form-group">
-                <label class="form-label">Genre / Shelf</label>
-                <div class="genre-row">
-                    <select name="genre" class="genre-select" id="genre-select">
-                        {% for g in preset_genres %}
-                        <option value="{{ g }}">{{ g }}</option>
-                        {% endfor %}
-                    </select>
-                    <span class="genre-or">or</span>
-                    <input type="text" name="custom_genre" class="genre-input"
-                           placeholder="Type custom genre..."
-                           oninput="document.getElementById('genre-select').disabled = this.value.length > 0">
-                </div>
-            </div>
-
-            <button type="submit" class="btn btn-primary">Upload Book</button>
-        </form>
-    </section>
-
-    <!-- ── LIBRARY SHELVES ── -->
-    <section class="library-section">
-        <h2 class="section-title">My Library</h2>
-
-        {% if shelves %}
             {% for genre, books in shelves.items() %}
-            <div class="shelf">
+            <div class="shelf" data-genre="{{ genre }}">
                 <h3 class="shelf-title">{{ genre }}</h3>
-                <div class="shelf-row">
+                <div class="card-row">
                     {% for book in books %}
-                    {% set card_id = book.id %}
-                    <div class="book-card" id="card-{{ card_id }}">
-
-                        <!-- Cover art (clickable) -->
-                        <a href="/read/{{ book.id }}" class="cover-wrap">
-                            {% if book.cover %}
-                                <img src="/cover/{{ book.id }}"
-                                     alt="{{ book.title }}" class="cover-img">
-                            {% else %}
-                                <div class="cover-auto">
-                                    <span class="cover-initials">
-                                        {{ book.title[:2].upper() }}
-                                    </span>
-                                </div>
-                            {% endif %}
-
-                            <!-- Processing overlay -->
-                            {% if book.running and book.pages %}
-                            <div class="cover-overlay">
-                                <div class="overlay-text">
-                                    <span id="done-{{ card_id }}">{{ book.processed }}</span>/{{ book.pages }}
-                                </div>
-                                <div class="overlay-bar-bg">
-                                    <div class="overlay-bar-fill"
-                                         id="bar-{{ card_id }}"
-                                         style="width:{{ ((book.processed / book.pages) * 100) | round }}%">
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </a>
-
-                        <!-- Book info -->
-                        <div class="card-info">
-                            <p class="card-title">{{ book.title }}</p>
-                            <p class="card-author">{{ book.author }}</p>
-                            {% if book.current_page > 0 %}
-                            <p class="card-progress">
-                                Page {{ book.current_page + 1 }} of {{ book.pages }}
-                            </p>
-                            {% endif %}
-                            {% if not book.running %}
-                            <p class="card-ready">✅ Ready</p>
-                            {% endif %}
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="card-actions">
-                            <a href="/read/{{ book.id }}" class="btn btn-primary btn-sm">
-                                {% if book.current_page > 0 %}▶ Resume{% else %}▶ Play{% endif %}
-                            </a>
-                            <form action="/delete/{{ book.id }}" method="POST"
-                                  onsubmit="return confirm('Delete this book and all its audio?')">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
-                            </form>
-                        </div>
-
-                    </div>
+                        {{ book_card(book) }}
                     {% endfor %}
                 </div>
             </div>
             {% endfor %}
+        </section>
 
-        {% else %}
-            <div class="empty-state">
-                <p>📚 No books yet. Upload a PDF to get started!</p>
-            </div>
-        {% endif %}
-    </section>
+    {% else %}
+        <!-- ── EMPTY STATE ── -->
+        <section class="empty-state">
+            <div class="empty-icon">{{ icon("book", 40) }}</div>
+            <h2>No books yet</h2>
+            <p>Upload a PDF and WAudible will read it to you.</p>
+            <button type="button" class="btn btn-primary btn-pill" data-sheet-open="add-sheet">
+                {{ icon("plus", 20) }} Add your first book
+            </button>
+        </section>
+    {% endif %}
 
 </main>
 
-<script>
-    // Poll processing status every 3 seconds for books still being processed
-    const processing = [
-        {% for genre, books in shelves.items() %}
-            {% for book in books %}
-                {% if book.running and book.pages %}
-                {{ book.id }},
-                {% endif %}
-            {% endfor %}
+<!-- Floating add button (tablets and desktop; phones use the bottom bar) -->
+<button type="button" class="fab" data-sheet-open="add-sheet" aria-label="Add a book"
+        aria-haspopup="dialog" aria-controls="add-sheet">{{ icon("plus", 28) }}</button>
+
+<!-- ── BOTTOM NAVIGATION (phones) ── -->
+<nav class="bottom-nav" aria-label="Main">
+    <a href="#top" class="nav-item is-active" data-nav="home">{{ icon("home", 24) }}<span>Home</span></a>
+    <a href="#library" class="nav-item" data-nav="library">{{ icon("library", 24) }}<span>Library</span></a>
+    <button type="button" class="nav-item" data-sheet-open="add-sheet" aria-haspopup="dialog"
+            aria-controls="add-sheet">{{ icon("plus", 24) }}<span>Add</span></button>
+</nav>
+
+<!-- ── ADD A BOOK (bottom sheet) ── -->
+<div class="sheet" id="add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="add-title">Add a book</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <p role="alert" class="auth-alert upload-alert">{{ message }}</p>
         {% endfor %}
-    ];
+    {% endwith %}
 
-    processing.forEach(bookId => {
-        const barEl  = document.getElementById('bar-'  + bookId);
-        const doneEl = document.getElementById('done-' + bookId);
-        if (!barEl || !doneEl) return;
+    <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-        const interval = setInterval(async () => {
-            const res  = await fetch('/status/' + bookId);
-            const data = await res.json();
-            const pct  = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
-            barEl.style.width  = pct + '%';
-            doneEl.textContent = data.done;
-            if (!data.running && data.done >= data.total) {
-                clearInterval(interval);
-                const overlay = barEl.closest('.cover-overlay');
-                if (overlay) overlay.remove();
-            }
+        <label class="file-pick">
+            <span class="file-icon">{{ icon("upload", 22) }}</span>
+            <span class="file-text">
+                <span class="file-label-title">PDF file</span>
+                <span class="file-chosen" id="pdf-chosen">Choose a PDF</span>
+            </span>
+            <input type="file" name="pdf" accept=".pdf,application/pdf" required
+                   onchange="document.getElementById('pdf-chosen').textContent = this.files[0] ? this.files[0].name : 'Choose a PDF'">
+        </label>
+
+        <label class="file-pick">
+            <span class="file-icon">{{ icon("image", 22) }}</span>
+            <span class="file-text">
+                <span class="file-label-title">Cover image (optional)</span>
+                <span class="file-chosen" id="cover-chosen">JPG, PNG or WebP</span>
+            </span>
+            <input type="file" name="cover" accept=".jpg,.jpeg,.png,.webp"
+                   onchange="document.getElementById('cover-chosen').textContent = this.files[0] ? this.files[0].name : 'JPG, PNG or WebP'">
+        </label>
+
+        <div class="form-group">
+            <label class="form-label" for="genre-select">Shelf</label>
+            <select name="genre" class="field" id="genre-select">
+                {% for g in preset_genres %}
+                <option value="{{ g }}">{{ g }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="custom_genre" class="field" id="custom-genre"
+                   placeholder="Or type a new shelf name" maxlength="100"
+                   oninput="document.getElementById('genre-select').disabled = this.value.trim().length > 0">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-pill btn-block">Upload book</button>
+    </form>
+</div>
+
+<!-- ── BOOK OPTIONS (bottom sheet) ── -->
+<div class="sheet" id="book-sheet" role="dialog" aria-modal="true" aria-labelledby="book-sheet-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title clamp-2" id="book-sheet-title">Book</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+
+    <div class="sheet-list" id="book-actions">
+        <a href="#" class="sheet-item" id="book-open">{{ icon("play", 22) }}<span>Open book</span></a>
+        <button type="button" class="sheet-item danger" id="book-delete">{{ icon("trash", 22) }}<span>Delete book</span></button>
+    </div>
+
+    <!-- Confirm step -->
+    <div class="confirm" id="book-confirm" hidden>
+        <p class="confirm-text">Delete <strong id="confirm-title"></strong> and all its audio? This can't be undone.</p>
+        <form method="POST" id="delete-form" class="confirm-actions">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="button" class="btn btn-ghost btn-pill" id="confirm-cancel">Cancel</button>
+            <button type="submit" class="btn btn-danger-solid btn-pill">Delete</button>
+        </form>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/sheets.js') }}"></script>
+<script>
+    // ── GENRE FILTER CHIPS ──
+    document.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const filter = chip.dataset.filter;
+            document.querySelectorAll('.chip').forEach(c => {
+                const on = c === chip;
+                c.classList.toggle('is-active', on);
+                c.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.shelf').forEach(shelf => {
+                shelf.hidden = !!filter && shelf.dataset.genre !== filter;
+            });
+        });
+    });
+
+    // ── BOOK OPTIONS: open, delete with a confirm step ──
+    const bookSheet  = document.getElementById('book-sheet');
+    const actionsEl  = document.getElementById('book-actions');
+    const confirmEl  = document.getElementById('book-confirm');
+
+    function showActions() {
+        actionsEl.hidden = false;
+        confirmEl.hidden = true;
+    }
+
+    document.querySelectorAll('.card-more').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.bookId, title = btn.dataset.title;
+            document.getElementById('book-sheet-title').textContent = title;
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('book-open').href = '/read/' + id;
+            document.getElementById('delete-form').action = '/delete/' + id;
+            showActions();
+            Sheets.open(bookSheet, btn, { onClose: showActions });
+        });
+    });
+
+    document.getElementById('book-delete').addEventListener('click', () => {
+        actionsEl.hidden = true;
+        confirmEl.hidden = false;
+        document.getElementById('confirm-cancel').focus();
+    });
+    document.getElementById('confirm-cancel').addEventListener('click', () => {
+        showActions();
+        document.getElementById('book-delete').focus();
+    });
+
+    // ── BOTTOM NAV: highlight Home or Library ──
+    document.querySelectorAll('.bottom-nav a.nav-item').forEach(a => {
+        a.addEventListener('click', () => {
+            document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.toggle('is-active', n === a));
+        });
+    });
+
+    // ── UPLOAD ERRORS: reopen the sheet so the message is seen ──
+    if (document.querySelector('#add-sheet .upload-alert')) {
+        Sheets.open('add-sheet', document.querySelector('.fab'));
+    }
+
+    // ── PROCESSING BARS: poll every 3 seconds ──
+    document.querySelectorAll('.cover-processing').forEach(bar => {
+        const card   = bar.closest('.book-card');
+        const bookId = card.dataset.bookId;
+        const timer  = setInterval(async () => {
+            try {
+                const res  = await fetch('/status/' + bookId);
+                const data = await res.json();
+                const pct  = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
+                bar.style.setProperty('--p', pct + '%');
+                bar.setAttribute('aria-label', `Preparing audio, ${data.done} of ${data.total} pages`);
+                if (!data.running) {
+                    clearInterval(timer);
+                    bar.remove();
+                }
+            } catch (e) { /* try again next tick */ }
         }, 3000);
     });
 </script>

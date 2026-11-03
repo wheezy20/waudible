@@ -4,9 +4,9 @@
         <span class="user-name">{{ current_user.display_name }}</span>
         <form action="{{ url_for('auth.logout') }}" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-control btn-sm">Log out</button>
+            <button type="submit" class="btn btn-ghost btn-pill btn-sm">Log out</button>
         </form>
     {% else %}
-        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-sm">Log in</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-pill btn-sm">Log in</a>
     {% endif %}
 </div>

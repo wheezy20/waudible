@@ -241,22 +241,36 @@ def index():
     books = (Book.query.filter_by(user_id=current_user.id)
              .order_by(Book.created_at).all())
 
-    # Group books by genre shelf
-    shelves = {}
-    for book in books:
-        shelves.setdefault(book.genre, []).append({
+    def card(book):
+        page = book.progress.current_page if book.progress else 0
+        return {
             "id"          : book.id,
             "title"       : book.title,
             "author"      : book.author,
+            "genre"       : book.genre,
             "pages"       : book.pages,
-            "current_page": book.progress.current_page if book.progress else 0,
+            "current_page": page,
+            # How far through the book (a page counts once it is reached)
+            "percent"     : round(100 * (page + 1) / book.pages) if book.pages and page else 0,
             "processed"   : book.pages_done,
             "running"     : book.status == "processing",
             "cover"       : bool(book.cover),
-        })
+        }
+
+    # Group books by genre shelf
+    shelves = {}
+    for book in books:
+        shelves.setdefault(book.genre, []).append(card(book))
+
+    # Continue listening: books opened since they were uploaded (opening
+    # the reader saves progress), most recently played first
+    played = [b for b in books if b.progress and b.progress.updated_at
+              and (b.progress.updated_at - b.created_at).total_seconds() > 2]
+    played.sort(key=lambda b: b.progress.updated_at, reverse=True)
 
     return render_template('index.html',
                            shelves=shelves,
+                           continue_listening=[card(b) for b in played[:6]],
                            preset_genres=PRESET_GENRES)
 
 
