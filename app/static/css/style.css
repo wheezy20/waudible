@@ -696,7 +696,7 @@ body.sheet-open { overflow: hidden; }
 .reader-body { overflow-x: hidden; }
 
 .player-glow {
-    position: absolute;
+    position: absolute;   /* inside the player sheet */
     top: 0;
     left: 0;
     right: 0;
@@ -1144,6 +1144,157 @@ body.sheet-open { overflow: hidden; }
     .player { padding-top: 16px; }
     .player-cover { width: min(100%, calc(100dvh - 400px), 400px); }
     .player-glow { left: 320px; }
+}
+
+/* ══════════ PERSISTENT PLAYER SHELL ══════════ */
+
+/* Full player: a sheet over the current page */
+.player-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 350;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg);
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 0.32s var(--ease), visibility 0s linear 0.32s;
+}
+.player-sheet.is-open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.32s var(--ease), visibility 0s;
+}
+.player-sheet.dragging { transition: none; }
+.player-topbar { touch-action: none; cursor: grab; }
+body.player-open { overflow: hidden; }
+
+/* Mini player above the bottom bar */
+.mini-player {
+    position: fixed;
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+    bottom: calc(var(--nav-h) + 4px + var(--safe-bottom));
+    z-index: 210;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 6px 6px 8px;
+    border-radius: var(--radius-sm);
+    background: #2A2A2A;
+    background: color-mix(in srgb, var(--glow, #5a2610) 55%, #1a1a1a);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+.mini-player[hidden] { display: none; }
+.mini-progress {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.2);
+}
+.mini-progress span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 1px;
+    background: var(--orange);
+}
+.mini-open {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    text-align: left;
+}
+.mini-cover {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--surface-3);
+}
+.mini-text { display: flex; flex-direction: column; min-width: 0; }
+.mini-title, .mini-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mini-title { font-size: 14px; font-weight: 700; }
+.mini-sub   { font-size: 13px; color: rgba(255, 255, 255, 0.72); }
+.mini-play {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.mini-play .icon-pause { display: none; }
+.mini-play.is-playing .icon-play  { display: none; }
+.mini-play.is-playing .icon-pause { display: block; }
+
+/* Room for the mini player under the page content */
+body.has-mini .home-main { padding-bottom: calc(var(--nav-h) + 120px + var(--safe-bottom)); }
+
+/* Top navigation (tablets and desktop) */
+.top-nav { display: none; gap: 4px; }
+.top-nav-item {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: var(--pill);
+    color: var(--text-2);
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.top-nav-item:hover { color: var(--text); }
+.top-nav-item.is-active { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--nav-h) + 84px + var(--safe-bottom));
+    transform: translateX(-50%);
+    z-index: 500;
+    max-width: calc(100% - 32px);
+    padding: 12px 18px;
+    border-radius: var(--radius-sm);
+    background: #F2F2F2;
+    color: #121212;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+@media (min-width: 768px) {
+    .top-nav { display: flex; }
+    .mini-player {
+        left: 50%;
+        right: auto;
+        width: min(720px, calc(100% - 48px));
+        transform: translateX(-50%);
+        bottom: calc(16px + var(--safe-bottom));
+    }
+    body.has-mini .fab { bottom: calc(96px + var(--safe-bottom)); }
+    body.has-mini .home-main { padding-bottom: 180px; }
+    .toast { bottom: calc(100px + var(--safe-bottom)); }
 }
 
 /* ── REDUCED MOTION ── */

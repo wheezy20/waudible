@@ -1,11 +1,12 @@
 import os
+from datetime import datetime, timezone
 from flask import (Flask, render_template, request, abort, flash,
-                   send_file, redirect, url_for, jsonify)
+                   send_file, redirect, url_for, jsonify, make_response)
 from flask_login import current_user
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 from app.pdf_reader import extract_page, get_book_info, extract_toc
-from app.tts_engine import (text_to_audio, list_voices, get_audio_path,
+from app.tts_engine import (text_to_audio, get_audio_path,
                             delete_book_audio, VOICES, SPEEDS)
 from app.storage import (new_storage_key, pdf_path, cover_path,
                          remove_book_files)
@@ -55,6 +56,10 @@ app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["REMEMBER_COOKIE_SECURE"]   = SECURE_COOKIES
 app.config["PREFERRED_URL_SCHEME"]     = "https" if SECURE_COOKIES else "http"
 
+# The page shell (player, sheets) stays loaded while you listen, so its
+# CSRF token must not expire after an hour. It stays tied to the session.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
+
 # Pooled Neon URL for the running app. PgBouncer runs in transaction
 # mode, so server-side prepared statements stay off.
 app.config["SQLALCHEMY_DATABASE_URI"]   = database_url()
@@ -97,7 +102,14 @@ def require_login():
     start_worker(app)   # no-op after the first request
     if request.endpoint in PUBLIC_ENDPOINTS or current_user.is_authenticated:
         return None
-    return login_manager.unauthorized()
+    response = login_manager.unauthorized()
+    if _is_htmx():
+        # Session ended during an in-page navigation: make the browser do a
+        # full redirect to the login page instead of swapping it into the page
+        target = response.headers.get('Location', url_for('auth.login'))
+        response = make_response('', 204)
+        response.headers['HX-Redirect'] = target
+    return response
 
 
 # Both registered after require_login, so a logged-out POST is sent to
@@ -234,10 +246,34 @@ def _cover_ext(filename: str) -> str | None:
 
 
 # ─────────────────────────────────────────
-# HOME PAGE: the user's genre shelves
+# PAGES: full page, or just the content for htmx
+# The player, mini player and sheets live in base.html and stay
+# put; in-app navigation (htmx) swaps only #app-content.
 # ─────────────────────────────────────────
-@app.route('/')
-def index():
+def _is_htmx() -> bool:
+    return request.headers.get('HX-Request') == 'true'
+
+
+def render_page(template: str, **context):
+    """Full page for normal loads, the content fragment for htmx swaps.
+    History restores (back button with an empty htmx cache) get the
+    full page, and htmx takes #app-content out of it."""
+    fragment = _is_htmx() and not request.headers.get('HX-History-Restore-Request')
+    response = make_response(render_template(
+        template, layout='fragment.html' if fragment else 'base.html', **context))
+    response.vary.add('HX-Request')
+    if fragment and request.method == 'GET':
+        # After a redirect (upload, delete) the address bar shows where we landed
+        response.headers['HX-Push-Url'] = request.full_path.rstrip('?')
+    return response
+
+
+@app.context_processor
+def player_constants():
+    return {"voices": VOICES, "speeds": SPEEDS}
+
+
+def _library_context():
     books = (Book.query.filter_by(user_id=current_user.id)
              .order_by(Book.created_at).all())
 
@@ -268,10 +304,23 @@ def index():
               and (b.progress.updated_at - b.created_at).total_seconds() > 2]
     played.sort(key=lambda b: b.progress.updated_at, reverse=True)
 
-    return render_template('index.html',
-                           shelves=shelves,
-                           continue_listening=[card(b) for b in played[:6]],
-                           preset_genres=PRESET_GENRES)
+    return {"shelves": shelves,
+            "continue_listening": [card(b) for b in played[:6]],
+            "preset_genres": PRESET_GENRES}
+
+
+# ─────────────────────────────────────────
+# HOME: continue listening and the shelves
+# LIBRARY: the shelves on their own
+# ─────────────────────────────────────────
+@app.route('/')
+def index():
+    return render_page('index.html', view='home', **_library_context())
+
+
+@app.route('/library')
+def library():
+    return render_page('index.html', view='library', **_library_context())
 
 
 # ─────────────────────────────────────────
@@ -391,16 +440,29 @@ def cover(book_id):
 # ─────────────────────────────────────────
 @app.route('/read/<int:book_id>')
 def read(book_id):
+    """The player is a sheet over the library: show the home page with
+    this book opened in the player."""
+    book = _get_book(book_id)
+    return render_page('index.html', view='home', open_book=book.id, **_library_context())
+
+
+@app.route('/player/<int:book_id>')
+def player_data(book_id):
+    """What the persistent player needs to load a book (read only)."""
     book     = _get_book(book_id)
-    progress = book.progress or Progress(current_page=0, speed=1.0, voice="af_heart")
-    return render_template('reader.html',
-                           book=book,
-                           info={"title": book.title, "author": book.author},
-                           progress=progress,
-                           voices=list_voices(),
-                           speeds=SPEEDS,
-                           total_pages=book.pages,
-                           preset_genres=PRESET_GENRES)
+    progress = book.progress
+    return jsonify({
+        "id"      : book.id,
+        "title"   : book.title,
+        "author"  : book.author or "",
+        "genre"   : book.genre,
+        "pages"   : book.pages,
+        "cover"   : f"/cover/{book.id}" if book.cover else f"/cover/{book.id}?size=512",
+        "page"    : progress.current_page if progress else 0,
+        "speed"   : progress.speed if progress else 1.0,
+        "voice"   : progress.voice if progress else "af_heart",
+        "running" : book.status == "processing",
+    })
 
 
 # ─────────────────────────────────────────
@@ -496,6 +558,9 @@ def save():
     book.progress.current_page = page
     book.progress.speed        = speed
     book.progress.voice        = voice
+    # Always counts as listened to (Continue listening), even when the
+    # page, speed and voice are the same as before
+    book.progress.updated_at   = datetime.now(timezone.utc)
     db.session.commit()
     return jsonify({"status": "saved"})
 

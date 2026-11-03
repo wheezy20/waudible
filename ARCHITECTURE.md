@@ -145,10 +145,12 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 
 | Route                             | Purpose                                  |
 |-----------------------------------|------------------------------------------|
-| `/`                               | the user's library, grouped by genre     |
+| `/`                               | Home: continue listening and the shelves |
+| `/library`                        | Library: the shelves on their own        |
 | `/logout`                         | sign out (POST)                          |
 | `/upload`                         | upload a PDF and optional cover (POST)   |
-| `/read/<book_id>`                 | reader page                              |
+| `/read/<book_id>`                 | Home with this book opened in the player |
+| `/player/<book_id>`               | JSON the player needs to load a book     |
 | `/audio/<book_id>/<page>?voice=`  | MP3 for one page                         |
 | `/cover/<book_id>`                | cover image                              |
 | `/status/<book_id>`               | background processing progress           |
@@ -159,6 +161,19 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/delete/<book_id>`               | delete a book and all its files (POST)   |
 
 Routes take the book's database id rather than the filename, which also avoids problems with spaces and special characters in URLs.
+
+## Page shell and the persistent player
+
+Audio keeps playing while you move around the app, like Spotify.
+
+- `base.html` is the page shell: header, `#app-content`, the one `<audio>` element, the mini player, the full player sheet (`_player.html`), the bottom bar and the bottom sheets. `fragment.html` is the content-only layout.
+- In-app links and forms use htmx (self-hosted `static/js/htmx.min.js`, version 2.0.11) with `hx-boost`, and only `#app-content` is swapped. `render_page()` in `app/main.py` returns the full page for normal loads and history restores, and just the content when the `HX-Request` header is present, so every URL also works as a plain page load.
+- htmx settings (meta `htmx-config`): `allowEval` off (CSP has no `unsafe-eval`), `historyCacheSize` 0 (no page snapshots with user data in `localStorage`; the back button asks the server).
+- `static/js/player.js` sets up the player exactly once: audio events, controls, sleep timer, readiness dots, preloading and the Media Session. `Player.open(id)` loads a book from `/player/<id>` (saving the previous book's progress first); opening the book that is already loaded just expands the sheet.
+- `static/js/app.js` runs page scripts after every swap (filter chips, processing rings, upload errors, `/read/<id>`) and cleans up their listeners and timers before the next one.
+- A login redirect during an htmx request becomes `HX-Redirect`, so the browser loads the login page in full. Logout is a normal form post (not htmx), so the shell and its audio are thrown away.
+- Deleting the book in the player (or one that is still opening) stops and clears the player and its lock-screen details.
+- CSRF tokens don't expire on a timer (`WTF_CSRF_TIME_LIMIT = None`), because the shell's token stays in use for the whole session; they are still tied to the session.
 
 ## Upload rules
 

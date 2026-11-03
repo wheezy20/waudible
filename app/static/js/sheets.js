@@ -40,7 +40,11 @@
 
         el.classList.add('is-open');
         el.setAttribute('aria-hidden', 'false');
-        backdrop().classList.add('show');
+        // Put the backdrop right before the sheet, in the same stacking
+        // context, so sheets inside the player sheet sit above it too
+        const bd = backdrop();
+        if (bd.nextElementSibling !== el) el.parentNode.insertBefore(bd, el);
+        bd.classList.add('show');
         document.body.classList.add('sheet-open');
         if (current.opener && current.opener.setAttribute) current.opener.setAttribute('aria-expanded', 'true');
         if (options.onOpen) options.onOpen(el);
@@ -115,5 +119,5 @@
         if (e.target.closest('[data-sheet-close]')) close();
     });
 
-    window.Sheets = { open, close, isOpen, reduceMotion };
+    window.Sheets = { open, close, isOpen, anyOpen: () => !!current, reduceMotion };
 })();

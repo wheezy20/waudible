@@ -89,6 +89,14 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Shared bottom sheets: grab handle, close on outside tap, swipe down or Escape, focus kept inside
 - [x] Reduced motion respected, 44px tap targets, 16px inputs
 
+## Keep playing while navigating
+
+- [x] One page shell (`base.html`) with the audio element, mini player, full player sheet and bottom bar; htmx swaps only the page content
+- [x] The reader is a player sheet over the current page; opening a book loads it into the persistent player, `/read/<id>` still works as a link
+- [x] Mini player above the bottom bar, switching books saves the previous book's progress, deleting the playing book clears the player
+- [x] Login redirects and logout do full page loads
+- [ ] Eyram checks playback across navigation and the lock screen on a real phone
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker

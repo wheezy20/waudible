@@ -1,0 +1,67 @@
+{# Book cards and shelves, shared by the Home and Library views #}
+{% from "_icons.html" import icon %}
+
+{% macro book_card(book, cls="") -%}
+<article class="book-card {{ cls }}" data-book-id="{{ book.id }}">
+    {# Opens the book in the persistent player (app.js); a plain link without JS #}
+    <a href="/read/{{ book.id }}" class="card-cover" data-open-book="{{ book.id }}" hx-boost="false"
+       aria-label="Play {{ book.title }}">
+        {%- if book.cover -%}
+            <img src="/cover/{{ book.id }}" alt="" class="cover-img" loading="lazy" decoding="async">
+        {%- else -%}
+            <img src="/cover/{{ book.id }}?size=512" alt="" class="cover-img" loading="lazy" decoding="async">
+        {%- endif -%}
+        {% if book.running and book.pages %}
+        <!-- Audio still being prepared -->
+        <span class="cover-processing" style="--p: {{ ((book.processed / book.pages) * 100) | round }}%"
+              aria-label="Preparing audio, {{ book.processed }} of {{ book.pages }} pages"></span>
+        {% endif %}
+    </a>
+    <div class="card-progress" role="progressbar" aria-label="Page {{ book.current_page + 1 }} of {{ book.pages }}"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ book.percent }}">
+        <span style="width: {{ book.percent }}%"></span>
+    </div>
+    <div class="card-meta">
+        <p class="card-title">{{ book.title }}</p>
+        <button type="button" class="icon-btn card-more" data-book-id="{{ book.id }}"
+                data-title="{{ book.title }}" aria-label="More options for {{ book.title }}"
+                aria-haspopup="dialog" aria-controls="book-sheet">{{ icon("more", 20) }}</button>
+    </div>
+</article>
+{%- endmacro %}
+
+{% macro shelves_section(shelves, heading_tag="h2") -%}
+<section class="home-section" id="library" aria-labelledby="library-title">
+    <{{ heading_tag }} class="section-heading" id="library-title">Your library</{{ heading_tag }}>
+
+    <!-- Genre filter chips -->
+    <div class="chips" role="toolbar" aria-label="Filter by genre">
+        <button type="button" class="chip is-active" data-filter="" aria-pressed="true">All</button>
+        {% for genre in shelves.keys() %}
+        <button type="button" class="chip" data-filter="{{ genre }}" aria-pressed="false">{{ genre }}</button>
+        {% endfor %}
+    </div>
+
+    {% for genre, books in shelves.items() %}
+    <div class="shelf" data-genre="{{ genre }}">
+        <h3 class="shelf-title">{{ genre }}</h3>
+        <div class="card-row">
+            {% for book in books %}
+                {{ book_card(book) }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</section>
+{%- endmacro %}
+
+{% macro empty_state() -%}
+<section class="empty-state">
+    <div class="empty-icon">{{ icon("book", 40) }}</div>
+    <h2>No books yet</h2>
+    <p>Upload a PDF and WAudible will read it to you.</p>
+    <button type="button" class="btn btn-primary btn-pill" data-sheet-open="add-sheet">
+        {{ icon("plus", 20) }} Add your first book
+    </button>
+</section>
+{%- endmacro %}
