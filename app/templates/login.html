@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log in | WAudible</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-body">
+
+<header>
+    <div class="header-inner">
+        <div class="logo">
+            <span class="logo-w">W</span>Audible
+        </div>
+        <p class="tagline">Your personal audiobook library</p>
+    </div>
+</header>
+
+<main class="auth-main">
+    <section class="auth-card">
+        <h1 class="auth-title">Log in to WAudible</h1>
+
+        <!-- Flash messages (generic login error) -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            <p class="auth-alert">{{ message }}</p>
+            {% endfor %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}" class="auth-form" novalidate>
+            {{ form.hidden_tag() }}
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email</label>
+                {{ form.email(class_="auth-input", id="email", autocomplete="email",
+                              autofocus=true, placeholder="you@example.com") }}
+                {% for error in form.email.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                {{ form.password(class_="auth-input", id="password",
+                                 autocomplete="current-password", placeholder="Password") }}
+                {% for error in form.password.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-pill">Log in</button>
+        </form>
+
+        <p class="auth-switch">
+            Don't have an account?
+            <a href="{{ url_for('auth.register', next=form.next.data or none) }}">Sign up</a>
+        </p>
+    </section>
+</main>
+
+</body>
+</html>

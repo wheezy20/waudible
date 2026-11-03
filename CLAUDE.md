@@ -24,6 +24,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/session_manager.py`: reading progress and book metadata
 - `app/db.py`: psycopg connection pool (current storage layer, to be replaced by Flask-SQLAlchemy)
 - `app/config.py`: `database_url(unpooled=False)` builds the SQLAlchemy URL from the Neon env vars
+- `app/auth.py`: `auth` blueprint (`/register`, `/login`, `/logout`), Flask-Login setup, forms
 - `app/models.py`: Flask-SQLAlchemy models (`User`, `Book`, `Progress`) and the shared `db` object
 - `init_db.py`: creates the `users`, `books` and `progress` tables (`python init_db.py`, safe to rerun)
 - `app/templates/`, `app/static/css/style.css`: UI
@@ -56,6 +57,7 @@ Startup takes a few seconds because the Kokoro model loads at import time.
 - `DATABASE_URL` is the **pooled** connection (hostname contains `-pooler`). The running app uses this.
 - `DATABASE_URL_UNPOOLED` is the **direct** connection. Use it for creating tables and other schema changes, never the pooled one.
 - Neon's pooler is PgBouncer in transaction mode, so server-side prepared statements must stay off for app connections.
+- `SECRET_KEY` (Flask session signing) and `INVITE_CODE` (required to sign up) also live in `.env`. The app refuses to start without `SECRET_KEY`. `.env.example` lists every key with placeholder values.
 - `neon.ts` holds the branch policy. New non-default branches expire after 7 days.
 
 ## Working rules

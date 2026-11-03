@@ -16,4 +16,5 @@ Where things stand at the start of the online version:
 - Created the Neon Postgres project in London (`eu-west-2`) and linked it with the Neon CLI (`neon init`, `neon deploy`). The connection variables live in `.env`.
 - Moved reading progress from JSON files in `data/sessions/` to a Postgres `book_sessions` table and imported the two existing sessions. Committed as `7e5c31a`.
 - Wrote the project docs: CLAUDE.md, PLAN.md, JOURNAL.md and ARCHITECTURE.md.
+- Added accounts: sign-up (invite code required), login and logout in an `auth` blueprint, with Flask-WTF CSRF protection on every form, including the existing upload, delete and save progress requests. Book routes are not protected yet. The app now needs `SECRET_KEY` and `INVITE_CODE` in `.env` (see `.env.example`).
 - Added Flask-SQLAlchemy and Flask-Login. Created the `User`, `Book` and `Progress` models in `app/models.py`, and ran `init_db.py` to create the `users`, `books` and `progress` tables in Neon. The old `book_sessions` storage keeps running until auth works.

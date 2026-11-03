@@ -8,8 +8,33 @@ from app.tts_engine import (text_to_audio, list_voices,
                              get_audio_path, delete_book_audio)
 from app.session_manager import (save_progress, load_progress,
                                   save_metadata, delete_session)
+from flask_wtf.csrf import CSRFProtect
+from app.config import database_url
+from app.models import db
+from app.auth import auth, login_manager
 
 app = Flask(__name__)
+
+# ─────────────────────────────────────────
+# CONFIG (secrets come from .env)
+# ─────────────────────────────────────────
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is not set in .env (see .env.example)")
+app.config["SECRET_KEY"] = SECRET_KEY
+
+# Pooled Neon URL for the running app. PgBouncer runs in transaction
+# mode, so server-side prepared statements stay off.
+app.config["SQLALCHEMY_DATABASE_URI"]   = database_url()
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "connect_args" : {"prepare_threshold": None},
+}
+
+db.init_app(app)
+login_manager.init_app(app)
+CSRFProtect(app)
+app.register_blueprint(auth)
 
 BOOKS_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data', 'books')
 COVERS_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'covers')

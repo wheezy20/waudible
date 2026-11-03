@@ -11,7 +11,7 @@ Turning WAudible from a single-user local app into a multi-user hosted app. Work
 
 - [x] Flask-SQLAlchemy models for `users`, `books` and `progress` in `app/models.py` (see ARCHITECTURE.md)
 - [x] `init_db.py` creates the tables over `DATABASE_URL_UNPOOLED`
-- [ ] App connects with the pooled `DATABASE_URL` through Flask-SQLAlchemy
+- [x] App connects with the pooled `DATABASE_URL` through Flask-SQLAlchemy
 
 Old single-user storage, kept running until auth works. To be replaced once auth works:
 
@@ -23,9 +23,11 @@ Old single-user storage, kept running until auth works. To be replaced once auth
 
 ## 2. Sign-up, login and logout
 
-- [ ] Flask-Login setup with password hashing
-- [ ] Sign-up, login and logout pages
-- [ ] Spotify-style dark UI in Ubuntu orange (`#E95420`)
+- [x] Flask-Login setup with password hashing
+- [x] Sign-up (invite code required), login and logout pages in `app/auth.py`
+- [x] Spotify-style dark UI in Ubuntu orange (`#E95420`)
+- [x] CSRF protection on every form (Flask-WTF)
+- [ ] Put real `SECRET_KEY` and `INVITE_CODE` values in `.env`
 
 ## 3. Per-user libraries
 

@@ -14,6 +14,7 @@
             <span class="logo-w">W</span>Audible
         </div>
         <p class="tagline">Your personal audiobook library</p>
+        {% include "_user_nav.html" %}
     </div>
 </header>
 
@@ -23,6 +24,7 @@
     <section class="upload-section">
         <h2 class="section-title">Add a Book</h2>
         <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <!-- PDF upload -->
             <div class="form-group">
@@ -129,6 +131,7 @@
                             </a>
                             <form action="/delete/{{ book.filename }}" method="POST"
                                   onsubmit="return confirm('Delete this book and all its audio?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-danger btn-sm">🗑</button>
                             </form>
                         </div>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign up | WAudible</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-body">
+
+<header>
+    <div class="header-inner">
+        <div class="logo">
+            <span class="logo-w">W</span>Audible
+        </div>
+        <p class="tagline">Your personal audiobook library</p>
+    </div>
+</header>
+
+<main class="auth-main">
+    <section class="auth-card">
+        <h1 class="auth-title">Sign up for WAudible</h1>
+        <p class="auth-subtitle">WAudible is invite only. Ask the owner for an invite code.</p>
+
+        <form method="POST" action="{{ url_for('auth.register') }}" class="auth-form" novalidate>
+            {{ form.hidden_tag() }}
+
+            <div class="form-group">
+                <label class="form-label" for="display_name">Display name</label>
+                {{ form.display_name(class_="auth-input", id="display_name", autocomplete="nickname",
+                                     autofocus=true, placeholder="What should we call you?") }}
+                {% for error in form.display_name.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email</label>
+                {{ form.email(class_="auth-input", id="email", autocomplete="email",
+                              placeholder="you@example.com") }}
+                {% for error in form.email.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                {{ form.password(class_="auth-input", id="password", autocomplete="new-password",
+                                 placeholder="At least 8 characters") }}
+                {% for error in form.password.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="confirm">Confirm password</label>
+                {{ form.confirm(class_="auth-input", id="confirm", autocomplete="new-password",
+                                placeholder="Type it again") }}
+                {% for error in form.confirm.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="invite_code">Invite code</label>
+                {{ form.invite_code(class_="auth-input", id="invite_code", autocomplete="off",
+                                    placeholder="Invite code") }}
+                {% for error in form.invite_code.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-pill">Create account</button>
+        </form>
+
+        <p class="auth-switch">
+            Already have an account?
+            <a href="{{ url_for('auth.login', next=form.next.data or none) }}">Log in</a>
+        </p>
+    </section>
+</main>
+
+</body>
+</html>

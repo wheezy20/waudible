@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ info.title }} — WAudible</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -12,6 +13,7 @@
     <div class="header-inner">
         <a href="/" class="back-btn">← Library</a>
         <h1><span class="logo-w">W</span>Audible</h1>
+        {% include "_user_nav.html" %}
     </div>
 </header>
 
@@ -216,7 +218,10 @@
     async function saveProgress() {
         await fetch('/save_progress', {
             method : 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken' : document.querySelector('meta[name="csrf-token"]').content,
+            },
             body   : JSON.stringify({
                 filename: FILENAME,
                 page    : currentPage,
