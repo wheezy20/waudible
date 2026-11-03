@@ -6,6 +6,8 @@ Newest entry first.
 
 Where things stand at the start of the online version:
 
+- Made the whole UI work on phones and tablets (layout, CSS and a little drawer JavaScript only; no routes, models or behaviour changed). On the reader, the contents sidebar is now a slide-up drawer on screens up to 900px wide, the player has large Prev/Next buttons with speed, voice and jump to page in a grid, and the page text is collapsed by default on phones. Touch screens get 16px inputs and 44px tap targets. Checked every page in headless Chrome at 360x640, 390x844 and 768x1024 with an automatic audit (no sideways scrolling, overlaps, clipped controls, small tap targets or small input text), and compared desktop pixel by pixel with screenshots taken before the change: identical apart from the moving audio playhead.
+
 - Changed the planned hosting address to `waudible.eyramwilson.dev` (it was `waudio.eyramwilson.dev`).
 
 - Prepared WAudible to be served from the internet (step 5, app side). It now runs under gunicorn (one worker process, four threads, 120 second timeout) on 127.0.0.1:8000 only, started by `run_prod.sh` or the systemd unit in `deploy/`. The audio queue starts inside the gunicorn worker and re-queues unfinished books. Added ProxyFix for the tunnel's headers, debug off by default, Secure/HttpOnly/SameSite=Lax cookies, security headers with a CSP, rate limits with Flask-Limiter (login and sign-up 10 per minute, uploads 20 per hour, per real client IP) and friendly error pages. Eyram ran the WAV to MP3 conversion, so the script is deleted. All three test suites (139 checks) pass on the temporary Neon branch. Not installed yet: the systemd service and the tunnel.

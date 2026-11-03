@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ info.title }} — WAudible</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -19,10 +19,15 @@
 
 <div class="reader-layout">
 
-    <!-- ── TOC SIDEBAR ── -->
-    <aside class="toc-sidebar" id="toc-sidebar">
+    <!-- ── TOC SIDEBAR (a slide-up drawer on small screens) ── -->
+    <div class="toc-backdrop" id="toc-backdrop" onclick="closeToc()"></div>
+    <aside class="toc-sidebar" id="toc-sidebar" aria-label="Contents">
         <div class="toc-header">
-            <span class="toc-title">Contents</span>
+            <div class="toc-header-row">
+                <span class="toc-title">Contents</span>
+                <button type="button" class="toc-close-btn" id="toc-close-btn"
+                        onclick="closeToc()" aria-label="Close contents">✕</button>
+            </div>
             <span class="toc-legend">
                 <span class="legend-dot ready-dot-lg"></span> Ready
                 <span class="legend-dot processing-dot-lg"></span> Processing
@@ -35,6 +40,14 @@
 
     <!-- ── MAIN READER ── -->
     <main class="reader-main">
+
+        <!-- Opens the contents drawer (small screens only) -->
+        <div class="reader-toolbar">
+            <button type="button" class="btn btn-control toc-open-btn" id="toc-open-btn"
+                    onclick="openToc()" aria-controls="toc-sidebar" aria-expanded="false">
+                ☰ Contents
+            </button>
+        </div>
 
         <!-- Book hero -->
         <section class="book-hero">
@@ -114,11 +127,11 @@
 
         </section>
 
-        <!-- Page text preview -->
-        <section class="text-preview">
-            <h3>Page Text</h3>
+        <!-- Page text preview (collapsed by default on phones) -->
+        <details class="text-preview" id="text-preview" open>
+            <summary class="text-preview-summary"><h3>Page Text</h3></summary>
             <div class="text-box" id="text-box">Loading...</div>
-        </section>
+        </details>
 
     </main>
 </div>
@@ -279,7 +292,7 @@
             item.appendChild(dot);
             item.appendChild(label);
             item.appendChild(pg);
-            item.onclick = () => loadPage(ch.page);
+            item.onclick = () => { loadPage(ch.page); closeToc(); };
             tocList.appendChild(item);
         });
 
@@ -314,8 +327,47 @@
         });
         if (best) {
             best.classList.add('toc-active');
-            best.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            // In drawer mode the list is off screen until opened (openToc scrolls it then)
+            if (!drawerMode.matches) {
+                best.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
         }
+    }
+
+    // ── CONTENTS DRAWER (small screens) ──
+    const drawerMode  = window.matchMedia('(max-width: 900px)');
+    const tocSidebar  = document.getElementById('toc-sidebar');
+    const tocBackdrop = document.getElementById('toc-backdrop');
+    const tocOpenBtn  = document.getElementById('toc-open-btn');
+
+    function openToc() {
+        tocSidebar.classList.add('toc-open');
+        tocBackdrop.classList.add('show');
+        document.body.classList.add('drawer-open');
+        tocOpenBtn.setAttribute('aria-expanded', 'true');
+        // Show the active chapter in the middle of the drawer
+        const active = tocSidebar.querySelector('.toc-active');
+        if (active) {
+            tocSidebar.scrollTop = active.offsetTop - tocSidebar.clientHeight / 2 + active.offsetHeight / 2;
+        }
+        document.getElementById('toc-close-btn').focus({ preventScroll: true });
+    }
+
+    function closeToc() {
+        if (!tocSidebar.classList.contains('toc-open')) return;
+        tocSidebar.classList.remove('toc-open');
+        tocBackdrop.classList.remove('show');
+        document.body.classList.remove('drawer-open');
+        tocOpenBtn.setAttribute('aria-expanded', 'false');
+        tocOpenBtn.focus({ preventScroll: true });
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeToc(); });
+    drawerMode.addEventListener('change', () => { if (!drawerMode.matches) closeToc(); });
+
+    // Page text starts collapsed on phones
+    if (window.matchMedia('(max-width: 600px)').matches) {
+        document.getElementById('text-preview').open = false;
     }
 
     // ── POLL READINESS EVERY 5 SECONDS WHILE PROCESSING ──

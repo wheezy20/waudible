@@ -63,6 +63,15 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [ ] DNS for `waudible.eyramwilson.dev`
 - [ ] Move to a VPS later
 
+## Phone and tablet layout
+
+- [x] Viewport meta with `viewport-fit=cover`, `dvh` for full-height layouts, safe-area insets for notches and home bars
+- [x] Touch screens: 16px text in inputs, selects and buttons (no iOS zoom), tap targets of at least 44px
+- [x] Header on one row, tagline hidden on phones
+- [x] Home: one-column upload form, stacked genre fields, shelves scroll sideways with scroll-snap, delete button set apart from Play
+- [x] Reader: contents as a slide-up drawer, large Prev/Next, full-width audio, speed, voice and jump in a grid, page text collapsed on phones
+- [x] Checked with headless Chrome at 360x640, 390x844 and 768x1024; desktop pixel-identical to before
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker

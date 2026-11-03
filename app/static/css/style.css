@@ -29,6 +29,7 @@ body {
     background: var(--bg-base);
     color: var(--text-primary);
     min-height: 100vh;
+    min-height: 100dvh;
     line-height: 1.6;
 }
 
@@ -42,6 +43,10 @@ header {
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--glass-border);
     padding: 16px 32px;
+    /* Room for notches and rounded corners (all 0 on desktop) */
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-left: max(32px, env(safe-area-inset-left, 0px));
+    padding-right: max(32px, env(safe-area-inset-right, 0px));
 }
 
 .header-inner {
@@ -631,6 +636,7 @@ audio#audio-player {
     display: grid;
     grid-template-columns: 280px 1fr;
     min-height: calc(100vh - 60px);
+    min-height: calc(100dvh - 60px);
 }
 
 /* ── TOC SIDEBAR ── */
@@ -642,6 +648,7 @@ audio#audio-player {
     position: sticky;
     top: 60px;
     height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
     scrollbar-width: thin;
     scrollbar-color: var(--orange-border) transparent;
 }
@@ -747,6 +754,19 @@ audio#audio-player {
     white-space: nowrap;
 }
 
+/* Drawer-only controls, shown on small screens (see MOBILE below) */
+.reader-toolbar,
+.toc-close-btn,
+.toc-backdrop { display: none; }
+
+/* The page text panel is a <details>; on desktop it looks like a plain card */
+.text-preview-summary {
+    display: block;
+    list-style: none;
+    cursor: pointer;
+}
+.text-preview-summary::-webkit-details-marker { display: none; }
+
 .book-genre {
     font-size: 12px;
     color: var(--orange);
@@ -758,27 +778,6 @@ audio#audio-player {
     margin-top: 4px;
 }
 
-/* ── RESPONSIVE ── */
-@media (max-width: 900px) {
-    .reader-layout { grid-template-columns: 1fr; }
-    .toc-sidebar {
-        position: relative;
-        top: 0;
-        height: auto;
-        max-height: 220px;
-        border-right: none;
-        border-bottom: 1px solid var(--glass-border);
-    }
-}
-
-@media (max-width: 768px) {
-    main, .reader-main { padding: 24px 16px; }
-    header { padding: 14px 16px; }
-    .upload-form { grid-template-columns: 1fr; }
-    .book-card { flex: 0 0 140px; }
-    .cover-wrap { width: 140px; height: 184px; }
-    .player-controls { flex-wrap: wrap; justify-content: center; }
-}
 /* ── USER NAV (header) ── */
 .user-nav {
     margin-left: auto;
@@ -932,4 +931,331 @@ audio#audio-player {
 .error-home {
     display: flex;
     margin-top: 28px;
+}
+
+.toc-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+/* ══════════════════════════════════════════
+   MOBILE AND TOUCH
+   Desktop (wider than 900px, with a mouse) is unchanged.
+   ══════════════════════════════════════════ */
+
+/* ── TOUCH: 16px text (no iOS zoom on focus) and 44px tap targets ── */
+@media (max-width: 900px), (pointer: coarse) {
+    input, select, textarea, button, .btn,
+    .auth-input, .genre-select, .genre-input,
+    .speed-wrap select, .voice-wrap select, .jump-wrap input {
+        font-size: 16px;
+    }
+
+    .btn, .btn-sm, .auth-input, .genre-select, .genre-input,
+    .speed-wrap select, .voice-wrap select, .jump-wrap input {
+        min-height: 44px;
+    }
+
+    .btn-sm { padding: 10px 16px; }
+    .file-label { min-height: 48px; }
+
+    .back-btn, .logo-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
+    .back-btn { font-size: 15px; white-space: nowrap; }
+
+    .auth-switch a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 4px;
+    }
+
+    .toc-item { min-height: 48px; }
+
+    /* Page text toggle */
+    .text-preview-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 44px;
+        margin: -10px 0 4px;
+    }
+    .text-preview-summary h3 { margin: 0; }
+    .text-preview-summary::after {
+        content: '▾';
+        color: var(--text-secondary);
+        font-size: 16px;
+        transition: transform 0.2s;
+    }
+    .text-preview[open] .text-preview-summary::after { transform: rotate(180deg); }
+}
+
+/* No sticky hover lift on touch screens */
+@media (hover: none) {
+    .book-card:hover { transform: none; }
+}
+
+/* ── TABLETS AND PHONES (900px and below) ── */
+@media (max-width: 900px) {
+    .header-inner { align-items: center; }
+
+    .reader-layout { grid-template-columns: 1fr; }
+
+    .book-genre { align-self: flex-start; }
+
+    /* Contents button above the book */
+    .reader-toolbar { display: flex; }
+    .toc-open-btn { gap: 8px; }
+
+    /* Contents sidebar becomes a slide-up drawer */
+    .toc-sidebar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        z-index: 300;
+        height: auto;
+        max-height: 75vh;
+        max-height: 75dvh;
+        padding: 0 0 calc(16px + env(safe-area-inset-bottom, 0px));
+        background: var(--bg-surface);
+        border-right: none;
+        border-top: 1px solid var(--orange-border);
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+        overscroll-behavior: contain;
+        transform: translateY(105%);
+        visibility: hidden;
+        transition: transform 0.25s ease, visibility 0s linear 0.25s;
+    }
+
+    .toc-sidebar.toc-open {
+        transform: translateY(0);
+        visibility: visible;
+        transition: transform 0.25s ease, visibility 0s;
+    }
+
+    .toc-header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--bg-surface);
+        padding: 14px 20px 12px;
+        margin-bottom: 4px;
+    }
+
+    /* Grab handle */
+    .toc-header::before {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.2);
+        margin: 0 auto 8px;
+    }
+
+    .toc-title { font-size: 13px; }
+
+    .toc-close-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        margin-right: -10px;
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        color: var(--text-secondary);
+        font-size: 18px;
+        cursor: pointer;
+    }
+    .toc-close-btn:hover, .toc-close-btn:focus-visible {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+    }
+
+    .toc-label { font-size: 14px; }
+    .toc-pg    { font-size: 12px; }
+
+    .toc-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 250;
+        background: rgba(0, 0, 0, 0.55);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+    }
+    .toc-backdrop.show { opacity: 1; pointer-events: auto; }
+
+    body.drawer-open { overflow: hidden; }
+}
+
+/* ── TABLETS AND PHONES (768px and below) ── */
+@media (max-width: 768px) {
+    main, .reader-main {
+        padding: 24px max(16px, env(safe-area-inset-left, 0px))
+                 calc(32px + env(safe-area-inset-bottom, 0px))
+                 max(16px, env(safe-area-inset-right, 0px));
+    }
+    .reader-main { gap: 24px; }
+
+    header {
+        padding-top: calc(12px + env(safe-area-inset-top, 0px));
+        padding-bottom: 12px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px));
+    }
+
+    /* Upload form: one column, genre select and custom genre stacked */
+    .upload-section { padding: 20px 16px; margin-bottom: 36px; }
+    .upload-form { grid-template-columns: minmax(0, 1fr); }
+    .upload-form > * { min-width: 0; }
+    .file-label span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .genre-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .genre-select, .genre-input { width: 100%; }
+    .genre-or { text-align: center; }
+
+    /* Shelves scroll sideways edge to edge and snap to cards */
+    .shelf-row {
+        scroll-snap-type: x mandatory;
+        scroll-padding-left: 16px;
+        margin: 0 -16px;
+        padding: 0 16px 12px;
+        gap: 16px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .book-card { flex: 0 0 156px; scroll-snap-align: start; }
+    .card-info { flex: 1; }
+    .cover-wrap { width: 156px; height: 205px; }
+
+    /* Play takes the space, delete sits apart at the far end */
+    .card-actions { gap: 12px; align-items: center; }
+    .card-actions > a.btn { flex: 1; padding: 10px; }
+    .card-actions form { margin-left: auto; }
+    .card-actions .btn-danger {
+        width: 44px;
+        padding: 0;
+        background: transparent;
+    }
+
+    /* Player: big Prev/Next, full-width audio, settings in a grid */
+    .player-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px 12px;
+        padding: 20px 16px;
+    }
+    .player-controls { display: contents; }
+    .page-display    { grid-column: 1 / -1; order: 1; }
+    audio#audio-player { grid-column: 1 / -1; order: 2; min-width: 0; }
+    #btn-prev        { order: 3; }
+    #btn-next        { order: 4; }
+    .speed-wrap      { order: 5; }
+    .voice-wrap      { order: 6; }
+    .jump-wrap       { grid-column: 1 / -1; order: 7; }
+    .status-msg      { grid-column: 1 / -1; order: 8; }
+
+    #btn-prev, #btn-next {
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 600;
+        width: 100%;
+    }
+
+    .speed-wrap, .voice-wrap {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        min-width: 0;
+    }
+    .speed-wrap select, .voice-wrap select { width: 100%; }
+
+    .jump-wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 12px;
+    }
+    .jump-wrap label { grid-column: 1 / -1; }
+    .jump-wrap input { width: 100%; }
+    .jump-wrap .btn  { min-width: 64px; }
+}
+
+/* ── PHONES (600px and below) ── */
+@media (max-width: 600px) {
+    .tagline { display: none; }
+
+    .header-inner { gap: 10px; }
+    .header-inner h1, .logo { font-size: 22px; }
+
+    .user-nav { gap: 8px; min-width: 0; }
+    .reader-body .user-name { display: none; }
+    .user-name {
+        max-width: 28vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Lighter blur for performance */
+    header {
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+    .auth-card {
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+    .cover-overlay {
+        backdrop-filter: none;
+        background: rgba(0, 0, 0, 0.82);
+    }
+
+    /* Book hero: cover and title side by side, smaller */
+    .book-hero { gap: 16px; }
+    .book-cover-hero { width: 84px; height: 111px; }
+    .hero-cover-initials { font-size: 22px; }
+    .book-hero-info { min-width: 0; gap: 4px; }
+    .book-hero-info h2 {
+        font-size: 18px;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .book-author { font-size: 13px; overflow-wrap: anywhere; }
+
+    .page-number { font-size: 40px; }
+
+    /* Page text: collapsible, collapsed by default (reader.html) */
+    .text-preview { padding: 0 18px; }
+    .text-preview-summary { min-height: 52px; margin: 0; }
+    .text-preview[open] .text-box { padding-bottom: 18px; }
+
+    /* Auth and error cards fit the screen, also with the keyboard open */
+    .auth-main {
+        padding: 24px max(16px, env(safe-area-inset-left, 0px))
+                 calc(24px + env(safe-area-inset-bottom, 0px))
+                 max(16px, env(safe-area-inset-right, 0px));
+    }
+    .auth-card { padding: 28px 20px; }
+    .auth-title { font-size: 24px; }
+    .auth-form { gap: 14px; margin-top: 20px; }
+    .auth-input { scroll-margin-bottom: 96px; }
+    .error-code { font-size: 52px; }
 }
