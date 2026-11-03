@@ -45,3 +45,7 @@ typing_extensions==4.15.0
 uritemplate==4.2.0
 urllib3==2.6.3
 Werkzeug==3.1.8
+psycopg==3.3.7
+psycopg-binary==3.3.7
+psycopg-pool==3.3.3
+python-dotenv==1.2.4
