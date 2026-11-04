@@ -511,7 +511,8 @@
     function isExpanded() { return sheetEl.classList.contains('is-open'); }
 
     function expandSheet() {
-        if (!book) return;
+        if (!book || isExpanded()) return;
+        Layers.opened('player', collapseSheet);
         sheetEl.classList.add('is-open');
         sheetEl.setAttribute('aria-hidden', 'false');
         sheetEl.style.transform = '';
@@ -525,6 +526,7 @@
     function collapseSheet() {
         if (!isExpanded()) return;
         if (Sheets.anyOpen()) Sheets.close({ restoreFocus: false });
+        Layers.closed('player');
         sheetEl.classList.remove('is-open');
         sheetEl.setAttribute('aria-hidden', 'true');
         sheetEl.style.transform = '';

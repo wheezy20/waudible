@@ -2,6 +2,10 @@
 
 Newest entry first.
 
+## 4 Nov 2026
+
+- The browser and Android Back button now closes whatever is open before leaving the page: a bottom sheet (Add, book options, More, Sleep, Page text, Contents) first, then the full player, which collapses to the mini player with the audio still playing. Opening the player or a sheet adds a history entry at the same address, and closing it any other way (the ⌄ button, a swipe, Escape, a tap outside) steps back over that entry, so Back never needs two presses. This lives in a small `Layers` helper in `static/js/sheets.js`; it stops htmx from reloading the page content when the Back only closes a layer. Tested on the Neon test branch with 65 Back button checks in headless Chrome, plus the navigation and lock-screen suites.
+
 ## 3 Nov 2026
 
 Where things stand at the start of the online version:

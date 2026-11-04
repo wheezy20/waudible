@@ -173,6 +173,7 @@ Audio keeps playing while you move around the app, like Spotify.
 - `static/js/app.js` runs page scripts after every swap (filter chips, processing rings, upload errors, `/read/<id>`) and cleans up their listeners and timers before the next one.
 - A login redirect during an htmx request becomes `HX-Redirect`, so the browser loads the login page in full. Logout is a normal form post (not htmx), so the shell and its audio are thrown away.
 - Deleting the book in the player (or one that is still opening) stops and clears the player and its lock-screen details.
+- The Back button closes the top layer first (a bottom sheet, then the full player) instead of leaving the page. `Layers` in `static/js/sheets.js` pushes a history entry at the same address when a layer opens and steps back over it when the layer is closed another way, so history and the screen stay in step. Its `popstate` listener runs before htmx's and stops it when the Back only closed a layer.
 - CSRF tokens don't expire on a timer (`WTF_CSRF_TIME_LIMIT = None`), because the shell's token stays in use for the whole session; they are still tied to the session.
 
 ## Upload rules
