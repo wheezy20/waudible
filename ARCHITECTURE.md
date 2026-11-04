@@ -194,8 +194,11 @@ Code: `app/worker.py` (queue and worker), `app/tts_engine.py` (Kokoro and audio 
 4. Pages that already have audio are skipped, so a book that is processed again resumes where it stopped.
 5. When the app starts (the first request, or `run.py` in the debug reloader's serving process), the worker starts and every book still marked `processing` is put back on the queue.
 6. If the reader asks for a page that isn't ready yet, `/audio` generates that one page on demand.
-7. The UI polls `/status` (`total`, `done`, `running`, read from the database) for the progress bar, and `/readiness` to see which pages can play.
-8. Deleting a book marks its `storage_key` as cancelled and removes its audio folder, then deletes the rows and the other files. The worker checks before every page and stops. Writing a page and deleting a book share a lock, so a page that finishes during a delete is dropped instead of recreating the folder.
+7. A page with nothing to say (no letters or digits, or Kokoro returns no audio) becomes about 5 seconds of silence, long enough that Android keeps its media notification. Pages longer than 1500 characters are spoken in chunks split at sentence ends and joined with a short pause.
+8. If a page fails for any other reason, the worker logs it with the book id and page, retries once, then writes the same silent placeholder and carries on, so one bad page never stops a book. When a book finishes, the log says how many pages failed.
+9. A watchdog thread checks every 30 seconds that the worker thread is alive. If it ever stopped, the watchdog starts a new one and re-queues every book still marked `processing`.
+10. The UI polls `/status` (`total`, `done`, `running`, read from the database) for the progress bar, and `/readiness` to see which pages can play.
+11. Deleting a book marks its `storage_key` as cancelled and removes its audio folder, then deletes the rows and the other files. The worker checks before every page and stops. Writing a page and deleting a book share a lock, so a page that finishes during a delete is dropped instead of recreating the folder.
 
 The Kokoro model is loaded once per process when the app starts.
 
@@ -203,3 +206,4 @@ Constraints that follow from this design:
 
 - The queue lives in process memory, so the app must run as a single process (one worker process, threads allowed). With several processes, each would load its own Kokoro model and run its own queue. If that is ever needed, move to a shared job queue.
 - The queue itself is lost on restart, but nothing else is: progress is in the database, and step 5 rebuilds the queue from it.
+- Worker messages go to stderr through the `app` logger, so under systemd they are in `journalctl -u waudible`.

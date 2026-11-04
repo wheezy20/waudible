@@ -98,6 +98,14 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Back button closes the open player sheet or bottom sheet first, without stopping audio
 - [ ] Eyram checks playback across navigation and the lock screen on a real phone
 
+## Audio worker robustness
+
+- [x] Pages with no speakable text (or no audio from Kokoro) get about 5 seconds of silence instead of crashing the book
+- [x] Each page is retried once on any other error, then replaced by silence; the failed page count is logged when a book finishes
+- [x] Very long pages are spoken in chunks split at sentence ends
+- [x] A watchdog restarts the worker thread if it ever stops
+- [ ] Restart the service so book 72 (stuck in processing since the crash) is re-queued and finishes
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker

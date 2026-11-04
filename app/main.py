@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timezone
 from flask import (Flask, render_template, request, abort, flash,
@@ -18,6 +19,16 @@ from app.auth import auth, login_manager
 from app.limiter import limiter, UPLOAD_LIMIT
 
 app = Flask(__name__)
+
+# Messages from the app's own modules (worker, audio) go to stderr, which
+# systemd keeps in the journal (journalctl -u waudible)
+_app_log = logging.getLogger("app")
+if not _app_log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _app_log.addHandler(_handler)
+    _app_log.setLevel(logging.INFO)
+    _app_log.propagate = False
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -480,7 +491,7 @@ def get_audio(book_id, page):
         # Not generated yet: make this one page now
         text       = extract_page(pdf_path(book.storage_key), page)
         audio_path = text_to_audio(text, book.storage_key,
-                                   page=page, voice=voice)
+                                   page=page, voice=voice, book_id=book.id)
         if not audio_path:
             abort(404)
 
