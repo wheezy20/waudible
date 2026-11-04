@@ -5,17 +5,8 @@ venv/
 *.onnx
 *.bin
 
-# Generated audio files
-data/audio/
-
-# Uploaded books (personal)
-data/books/
-
-# Uploaded covers (personal)
-data/covers/
-
-# Session data (personal)
-data/sessions/
+# Local data: uploaded books, covers, generated audio (personal)
+data/
 
 # Python cache
 __pycache__/
@@ -23,8 +14,27 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Environment files
+# Environment files and secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Cloudflare Tunnel (credentials, certificate, local config)
+.cloudflared/
+cloudflared/
+cloudflared*.yml
+cloudflared*.yaml
+cloudflared*.json
+cert.pem
+config.yml
+*credentials*.json
+# Tunnel credentials are named after the tunnel UUID
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*-*-*-*.json
+
+# Downloaded packages
+*.deb
 
 # OS files
 .DS_Store

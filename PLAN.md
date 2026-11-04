@@ -58,9 +58,9 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Rate limits: login and sign-up 10 per minute per IP, uploads 20 per hour per IP
 - [x] Friendly 400, 404, 413, 429 and 500 pages
 - [x] systemd unit and install steps in `deploy/`
-- [ ] Install the systemd service (`deploy/README.md`)
-- [ ] Cloudflare Tunnel from the laptop to `http://127.0.0.1:8000`
-- [ ] DNS for `waudible.eyramwilson.dev`
+- [x] Install the systemd service (`deploy/README.md`)
+- [x] Cloudflare Tunnel from the laptop to `http://127.0.0.1:8000`
+- [x] DNS for `waudible.eyramwilson.dev`
 - [ ] Move to a VPS later
 
 ## Phone and tablet layout
@@ -105,6 +105,15 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Very long pages are spoken in chunks split at sentence ends
 - [x] A watchdog restarts the worker thread if it ever stops
 - [ ] Restart the service so book 72 (stuck in processing since the crash) is re-queued and finishes
+
+## Publish on GitHub
+
+- [x] Secrets check of the working tree and the full git history (nothing found)
+- [x] `.gitignore` covers `.env` files, `.neon`, Cloudflare Tunnel files, `*.deb`, keys, model files and all of `data/`
+- [x] README rewritten for the hosted version, with an honest Security section
+- [ ] Push `online-version` to GitHub (needs Eyram's GitHub login, see JOURNAL)
+- [ ] Choose a license (none added yet)
+- [ ] Merge `online-version` into `main` (later, when Eyram decides)
 
 ## 6. PWA offline mode
 
