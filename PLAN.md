@@ -139,3 +139,4 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Progress saved on the device while offline and synced when back online (last write wins)
 - [x] Cleanup: books deleted on the server lose their downloads, logging out deletes the user's downloads, one account never sees another's
 - [x] `offline` browser suite in `run_tests.sh`
+- [x] `/sw.js`, the manifest and `/offline` sent with `Cache-Control: no-cache, max-age=0` and kept out of Cloudflare's edge cache, so worker updates apply straight away

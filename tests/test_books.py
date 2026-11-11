@@ -125,7 +125,7 @@ try:
     T.check("/offline/csrf gives a token that works", a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25,
             "voice": "bf_emma"}, headers={"X-CSRFToken": a.get("/offline/csrf").get_json()["token"]}).status_code == 200)
     sw = anon.get("/sw.js")
-    T.check("/sw.js is public, no-cache, versioned", sw.status_code == 200 and sw.headers["Cache-Control"] == "no-cache"
+    T.check("/sw.js is public, no-cache, versioned", sw.status_code == 200 and sw.headers["Cache-Control"] == "no-cache, max-age=0"
             and "__VERSION__" not in sw.get_data(as_text=True) and "waudible-shell-" in sw.get_data(as_text=True))
     mf = anon.get("/manifest.webmanifest")
     T.check("the web app manifest is public", mf.status_code == 200 and mf.mimetype == "application/manifest+json"
