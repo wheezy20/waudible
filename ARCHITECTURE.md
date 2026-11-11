@@ -207,3 +207,11 @@ Constraints that follow from this design:
 - The queue lives in process memory, so the app must run as a single process (one worker process, threads allowed). With several processes, each would load its own Kokoro model and run its own queue. If that is ever needed, move to a shared job queue.
 - The queue itself is lost on restart, but nothing else is: progress is in the database, and step 5 rebuilds the queue from it.
 - Worker messages go to stderr through the `app` logger, so under systemd they are in `journalctl -u waudible`.
+
+## Logging
+
+Everything the app logs goes to stderr through the `app` logger, so under systemd it is in `journalctl -u waudible`.
+
+- **Slow requests** (`app/request_log.py`): a request that takes more than 3 seconds (`SLOW_REQUEST_SECONDS`) logs one WARNING line, for example `Slow request: GET /audio/<int:book_id>/<int:page> 200 in 4.01 s`. It shows the route pattern, never the real path or query string, and never bodies, cookies, users or emails. The timer starts before the login check; streaming a file's body after the response starts is not counted.
+- **Database connect errors**: a SQLAlchemy `handle_error` listener logs one ERROR line when a connection can't be made (failed pre-pings that the pool recovers from are skipped). Quoted values, IP addresses and the host, user, password and database name are masked.
+- **Server errors**: Flask still logs the exception and traceback (`Exception on <path>`), and gunicorn's access log still records every request with its full path. The 500 page falls back to plain HTML if the normal page can't render (for example while the database is down).

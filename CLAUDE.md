@@ -21,12 +21,13 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/main.py`: Flask config and routes (login required everywhere except login and register, books looked up by id and owner)
 - `app/tts_engine.py`: loads Kokoro once, generates page audio (MP3, speed 1.0, one file per voice; silence for empty pages, long pages in chunks), allowed voices and speeds
 - `app/audio_codec.py`: ffmpeg MP3 encoding and the startup ffmpeg check
+- `app/request_log.py`: slow request warnings (over 3 s, route pattern only) and database connect error logging
 - `app/limiter.py`: Flask-Limiter setup and the limits for login, sign-up and uploads
 - `app/templates/error.html`: friendly error pages
 - `gunicorn.conf.py`, `run_prod.sh`: production server
 - `deploy/`: systemd unit (`waudible.service`) and install steps (`README.md`)
 - `app/worker.py`: the single background worker, its queue and the watchdog that restarts it; a failing page is retried once, then replaced by silence
-- `app/storage.py`: paths for files stored under each book's `storage_key`
+- `app/storage.py`: paths for files stored under each book's `storage_key` (`WAUDIBLE_DATA_DIR` moves them, the tests use a temporary folder)
 - `app/pdf_reader.py`: page text, page count, metadata, table of contents
 - `app/session_manager.py`, `app/db.py`: old single-user storage, no longer used by the app, kept until deletion is confirmed
 - `app/config.py`: `database_url(unpooled=False)` builds the SQLAlchemy URL from the Neon env vars
@@ -38,6 +39,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/static/css/style.css`: UI
 - `migrate.py`, `migrations/`: old table creation for `book_sessions`, no longer used, kept until deletion is confirmed
 - `data/books`, `data/covers`, `data/audio`: uploaded files and generated audio (gitignored)
+- `tests/`, `run_tests.sh`: test suites and the runner (see `tests/README.md`); `tests/helpers.py` holds the production guard, fake Kokoro and fixtures
 
 ## Running the app
 
@@ -82,6 +84,6 @@ Startup takes a few seconds because the Kokoro model loads at import time.
 - Never print, echo, log or commit anything from `.env` (connection strings, passwords, secret keys). When a value must be checked, mask it.
 - No em dashes or en dashes anywhere: prose, docs, code comments, commit messages or UI text. Use commas or parentheses instead.
 - No `Co-Authored-By` or `Claude-Session` trailers in commit messages.
-- Tests that write to the database run on a temporary Neon branch, never production: export the branch's `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for the test process only, never edit `.env`.
+- Tests that write to the database run on a temporary Neon branch, never production: export the branch's `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for the test process only, never edit `.env`. Run them with `./run_tests.sh` (the guard in `tests/helpers.py` refuses production).
 - Debug stays off in production. Don't add `WAUDIBLE_DEBUG` or `WAUDIBLE_SECURE_COOKIES=0` to the service.
 - Keep `PLAN.md` checkboxes current and add a dated entry at the top of `JOURNAL.md` when something significant happens.

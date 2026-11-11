@@ -1,0 +1,8 @@
+{
+  "name": "waudible-browser-tests",
+  "private": true,
+  "description": "Headless Chrome checks for WAudible (run through tests/browser/server.py)",
+  "dependencies": {
+    "puppeteer-core": "25.16.0"
+  }
+}

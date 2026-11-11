@@ -17,6 +17,7 @@ from app.config import database_url
 from app.models import db, Book, Progress
 from app.auth import auth, login_manager
 from app.limiter import limiter, UPLOAD_LIMIT
+from app.request_log import init_request_logging
 
 app = Flask(__name__)
 
@@ -29,6 +30,10 @@ if not _app_log.handlers:
     _app_log.addHandler(_handler)
     _app_log.setLevel(logging.INFO)
     _app_log.propagate = False
+
+# Slow requests and database connect errors go to the same log. Set up
+# before any other hook, so the timer covers the login check too.
+init_request_logging(app)
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -220,7 +225,13 @@ def server_error(_error):
         db.session.rollback()
     except Exception:
         pass
-    return _error_page(500)
+    try:
+        return _error_page(500)
+    except Exception:
+        # Rendering loads the user (Flask-Login), which fails while the
+        # database is down, so fall back to a page that needs nothing
+        title, message = ERROR_PAGES[500]
+        return f"<!DOCTYPE html><title>WAudible</title><h1>{title}</h1><p>{message}</p>", 500
 
 
 def _get_book(book_id: int) -> Book:

@@ -7,7 +7,9 @@ import shutil
 # Every file for a book lives under its random
 # storage_key. Uploaded filenames are never paths.
 # ─────────────────────────────────────────
-DATA_DIR   = os.path.join(os.path.dirname(__file__), '..', 'data')
+# WAUDIBLE_DATA_DIR moves everything somewhere else (the tests use a
+# temporary folder); unset, files live in data/ in the repo
+DATA_DIR   = os.environ.get("WAUDIBLE_DATA_DIR") or os.path.join(os.path.dirname(__file__), '..', 'data')
 BOOKS_DIR  = os.path.join(DATA_DIR, 'books')
 COVERS_DIR = os.path.join(DATA_DIR, 'covers')
 AUDIO_DIR  = os.path.join(DATA_DIR, 'audio')
