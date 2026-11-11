@@ -1297,6 +1297,233 @@ body.has-mini .home-main { padding-bottom: calc(var(--nav-h) + 120px + var(--saf
     .toast { bottom: calc(100px + var(--safe-bottom)); }
 }
 
+/* ══════════ OFFLINE LISTENING ══════════ */
+.offline-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: var(--pill);
+    background: var(--surface-3);
+    border: 1px solid var(--line-strong);
+    color: var(--text-2);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.offline-badge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+.offline-badge[hidden] { display: none; }
+
+/* Downloaded (check) or downloading (ring) mark on a cover */
+.cover-offline {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    display: none;
+    width: 26px;
+    height: 26px;
+    color: var(--green);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+}
+.book-card.is-downloaded .cover-offline { display: block; }
+.cover-offline .icon { width: 26px; height: 26px; }
+.book-card.is-downloading .cover-offline {
+    display: block;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+}
+.book-card.is-downloading .cover-offline .icon { display: none; }
+.book-card.is-downloading .cover-offline::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: conic-gradient(var(--green) var(--p, 0%), rgba(255, 255, 255, 0.22) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+
+/* Offline: books that aren't on this device, and actions that need the server */
+body.is-offline .book-card:not(.is-downloaded) .card-cover { opacity: 0.4; filter: grayscale(0.6); }
+body.is-offline [data-sheet-open="add-sheet"] { opacity: 0.45; }
+
+.sheet-item:disabled { color: var(--text-3); cursor: default; }
+.sheet-item:disabled:hover { background: none; }
+.sheet-item.is-done { color: var(--green); }
+.field-note { margin-top: 8px; font-size: 13px; color: var(--text-2); line-height: 1.45; }
+.field-note[hidden] { display: none; }
+
+/* Library: the way into Downloads */
+.downloads-link {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text);
+    text-decoration: none;
+}
+.downloads-link:hover { background: var(--surface-3); }
+.downloads-link-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--orange-dim);
+    color: var(--orange);
+    flex-shrink: 0;
+}
+.downloads-link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.downloads-link-title { font-size: 16px; font-weight: 700; }
+.downloads-link-sub { font-size: 13px; color: var(--text-2); }
+.downloads-link-arrow { color: var(--text-3); display: inline-flex; }
+
+/* Downloads screen and the offline page */
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    margin-left: -4px;
+    color: var(--text-2);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.back-link:hover { color: var(--text); }
+.downloads { max-width: 720px; }
+.downloads-empty { color: var(--text-2); font-size: 15px; line-height: 1.5; }
+.downloads-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.downloads-total { font-size: 14px; color: var(--text-2); }
+.downloads-confirm {
+    margin: 4px 0 16px;
+    padding: 16px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+.downloads-confirm .confirm-actions { margin-top: 14px; }
+.downloads-list { list-style: none; margin: 0; padding: 0; }
+.dl-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+}
+.dl-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    color: var(--text);
+    text-decoration: none;
+}
+.dl-cover {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    background: var(--surface-3);
+    flex-shrink: 0;
+}
+.dl-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dl-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+.dl-meta { font-size: 13px; color: var(--text-2); }
+.dl-delete { color: var(--text-2); }
+.dl-delete:hover { color: var(--danger); }
+.dl-note { margin-top: 14px; font-size: 13px; color: var(--text-3); line-height: 1.5; }
+
+.offline-intro {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+.offline-intro .section-heading { margin-bottom: 4px; font-size: 20px; }
+.offline-intro-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--orange-dim);
+    color: var(--orange);
+    flex-shrink: 0;
+}
+.offline-intro-text { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+.offline-retry { margin-top: 12px; }
+
+/* Download sheet */
+.dl-book { margin: -6px 0 12px; color: var(--text-2); font-size: 15px; font-weight: 600; }
+.dl-book:empty { display: none; }
+.dl-state[hidden] { display: none; }
+.dl-state .field-error { margin-top: 10px; line-height: 1.45; }
+.dl-progress-row { display: flex; align-items: center; gap: 16px; }
+.dl-ring {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 800;
+}
+.dl-ring::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(var(--orange) var(--p, 0%), rgba(255, 255, 255, 0.14) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
+    transition: background 0.2s;
+}
+
+/* Suggestion sheet */
+.ask-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+.ask-actions .btn { min-height: 50px; }
+.btn-text {
+    min-height: 44px;
+    border: none;
+    background: none;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.btn-text:hover { color: var(--text); }
+
 /* ── REDUCED MOTION ── */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

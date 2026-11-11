@@ -33,11 +33,19 @@ const RECORDER = () => {
   ms.setPositionState = state => { window.__ms.positions.push(state); return setPos(state); };
 };
 
-async function login(page) {
+// ask: false answers "Don't ask again" for the seeded books, so the
+// download suggestion doesn't cover the player in the other checks
+async function login(page, { email = env.EMAIL, password = env.PASSWORD, ask = false } = {}) {
   await page.goto(`${base}/login`);
-  await page.type('#email', env.EMAIL);
-  await page.type('#password', env.PASSWORD);
+  await page.type('#email', email);
+  await page.type('#password', password);
   await Promise.all([page.waitForNavigation(), page.click('button[type=submit]')]);
+  if (!ask) {
+    await page.evaluate(ids => {
+      const uid = document.querySelector('meta[name="waudible-user"]').content;
+      for (const id of ids) localStorage.setItem(`waudible:ask:${uid}:${id}`, JSON.stringify({ choice: 'never', at: Date.now() }));
+    }, [env.BOOK1, env.BOOK2, env.BOOK3].filter(Boolean));
+  }
 }
 
 const waitPlaying = page => page.waitForFunction(() => {

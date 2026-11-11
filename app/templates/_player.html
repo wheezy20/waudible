@@ -118,11 +118,12 @@
     </div>
     <div class="form-group">
         <label class="form-label" for="voice">Voice</label>
-        <select id="voice" class="field">
+        <select id="voice" class="field" aria-describedby="voice-note">
             {% for v in voices %}
             <option value="{{ v }}">{{ v }}</option>
             {% endfor %}
         </select>
+        <p class="field-note" id="voice-note" hidden></p>
     </div>
     <div class="form-group">
         <label class="form-label" for="jump-input">Jump to page (1 to <span id="jump-max">1</span>)</label>
@@ -132,6 +133,7 @@
         </div>
         <p class="field-error" id="jump-error" role="alert"></p>
     </div>
+    <button type="button" class="sheet-item" id="more-download" data-download-action>{{ icon("download", 22) }}<span class="dl-action-label">Download for offline</span></button>
     <button type="button" class="sheet-item" id="more-library">{{ icon("library", 22) }}<span>Back to library</span></button>
 </div>
 

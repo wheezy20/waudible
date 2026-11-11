@@ -1,0 +1,17 @@
+{% extends layout %}
+{% from "_icons.html" import icon %}
+
+{% block title %}Downloads | WAudible{% endblock %}
+
+{% block content %}
+{# Drawn by offline.js from this device's storage #}
+<div class="page" data-view="downloads">
+    <div class="home-main">
+        <section class="home-section" aria-labelledby="downloads-title">
+            <a href="/library" class="back-link">{{ icon("chevron-left", 20) }} Library</a>
+            <h1 class="section-heading" id="downloads-title">Downloads</h1>
+            <div class="downloads" id="downloads"><p class="downloads-empty">Loading...</p></div>
+        </section>
+    </div>
+</div>
+{% endblock %}

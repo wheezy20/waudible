@@ -131,6 +131,11 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 
 ## 6. PWA offline mode
 
-- [ ] Web app manifest and service worker
-- [ ] Download button on each book to save the full audiobook for offline listening
-- [ ] Pop-up recommending downloading the full audiobook instead of streaming
+- [x] Web app manifest (standalone, orange theme, 192 and 512 icons plus a maskable one) and a service worker at `/sw.js`
+- [x] Download button on each book (card menu and the player's More sheet) to save the full audiobook for offline listening, with a confirm step showing the size
+- [x] Pop-up recommending downloading the full audiobook instead of streaming (Download, Not now, Don't ask again for this book)
+- [x] Downloads screen in Library: size per book, delete per book, Delete all, total space used
+- [x] Offline page from the service worker that lists the downloaded books; offline playback with seeking (Range requests), contents, lock screen, speed and sleep timer
+- [x] Progress saved on the device while offline and synced when back online (last write wins)
+- [x] Cleanup: books deleted on the server lose their downloads, logging out deletes the user's downloads, one account never sees another's
+- [x] `offline` browser suite in `run_tests.sh`

@@ -36,8 +36,9 @@
 
         // Active item in the bottom bar and the top nav
         const view = root.dataset.view;
+        const nav = view === 'downloads' ? 'library' : view;
         document.querySelectorAll('[data-nav]').forEach(a => {
-            const on = a.dataset.nav === view;
+            const on = a.dataset.nav === nav;
             a.classList.toggle('is-active', on);
             if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
         });
@@ -81,6 +82,9 @@
             Sheets.open('add-sheet', document.querySelector('.bottom-nav [data-sheet-open], .fab'));
         }
 
+        // Downloaded marks on covers, the Downloads list, the offline page
+        Offline.initPage(root);
+
         // /read/<id>: open that book in the player
         if (root.dataset.openBook) Player.open(root.dataset.openBook);
     }
@@ -104,7 +108,16 @@
             toast('Something went wrong. Please try again.');
         }
     });
-    document.addEventListener('htmx:sendError', () => toast("Can't reach WAudible. Check your connection."));
+    // No network for a page change: load it the normal way, so the service
+    // worker can show the offline page with the downloaded books
+    document.addEventListener('htmx:sendError', e => {
+        const verb = (e.detail.requestConfig && e.detail.requestConfig.verb) || 'get';
+        if (verb === 'get' && e.detail.pathInfo && !Offline.isOnline()) {
+            window.location.href = e.detail.pathInfo.requestPath;
+        } else {
+            toast("Can't reach WAudible. Check your connection.");
+        }
+    });
 
     // ── BOOK LINKS: open in the persistent player ──
     document.addEventListener('click', e => {
@@ -128,6 +141,11 @@
         $('book-sheet-title').textContent = btn.dataset.title;
         $('confirm-title').textContent = btn.dataset.title;
         $('delete-form').action = '/delete/' + menuBookId;
+        const dl = $('book-download');
+        dl.dataset.bookId = menuBookId;
+        dl.dataset.title  = btn.dataset.title;
+        dl.dataset.ready  = btn.dataset.ready;
+        Offline.updateActions();
         showActions();
         Sheets.open('book-sheet', btn, { onClose: showActions });
     });
@@ -150,6 +168,7 @@
         e.preventDefault();
         const form = e.currentTarget;
         Player.forget(menuBookId);
+        Offline.remove(menuBookId);          // its downloaded copy goes too
         Sheets.close({ restoreFocus: false });
         htmx.ajax('POST', form.getAttribute('action'), { source: form, target: '#app-content', swap: 'innerHTML show:window:top' });
     });

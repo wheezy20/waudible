@@ -1,0 +1,25 @@
+{% extends layout %}
+{% from "_icons.html" import icon %}
+
+{% block title %}Offline | WAudible{% endblock %}
+
+{% block content %}
+{# Shown by the service worker when there is no network. No user data
+   here: offline.js lists this account's downloads from IndexedDB. #}
+<div class="page" data-view="offline">
+    <div class="home-main">
+        <section class="offline-intro">
+            <span class="offline-intro-icon">{{ icon("offline", 26) }}</span>
+            <div>
+                <h1 class="section-heading">You're offline</h1>
+                <p class="offline-intro-text" id="offline-intro-text">Downloaded books still play. Everything else comes back when you reconnect.</p>
+            </div>
+        </section>
+        <button type="button" class="btn btn-ghost btn-pill btn-sm offline-retry" id="offline-retry">Try again</button>
+        <section class="home-section" aria-labelledby="offline-books-title">
+            <h2 class="section-heading" id="offline-books-title">Downloaded books</h2>
+            <div class="downloads" id="downloads"><p class="downloads-empty">Loading...</p></div>
+        </section>
+    </div>
+</div>
+{% endblock %}

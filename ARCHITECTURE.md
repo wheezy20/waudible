@@ -1,6 +1,6 @@
 # WAudible architecture
 
-Design of the multi-user hosted version. Accounts, per-user books, `storage_key` file storage and the processing queue are built. MP3 audio, hosting and the PWA are still to come (see PLAN.md).
+Design of the multi-user hosted version. Accounts, per-user books, `storage_key` file storage, the processing queue, MP3 audio, hosting and the offline PWA are built (see PLAN.md).
 
 ## Overview
 
@@ -43,7 +43,7 @@ Internet -> Cloudflare -> cloudflared (tunnel) -> gunicorn 127.0.0.1:8000 -> Fla
 ### Cookies and headers
 
 - Session cookie: `Secure` (https only), `HttpOnly`, `SameSite=Lax`.
-- Every response gets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` and a Content-Security-Policy: same-origin for everything except Google Fonts (`fonts.googleapis.com` for the stylesheet, `fonts.gstatic.com` for font files), `frame-ancestors 'none'`, `object-src 'none'`. Scripts and styles allow `'unsafe-inline'` because the pages use inline `<script>` blocks, `onclick=` handlers and `style=` attributes. Moving the JavaScript into static files would let the CSP drop `'unsafe-inline'` for scripts.
+- Every response gets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` and a Content-Security-Policy: same-origin for everything except Google Fonts (`fonts.googleapis.com` for the stylesheet, `fonts.gstatic.com` for font files), `worker-src 'self'`, `manifest-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`. `/sw.js` gets its own policy: same-origin, plus `connect-src` for the two Google Fonts hosts so the worker can keep the font for offline use. Scripts and styles allow `'unsafe-inline'` because the pages use inline `<script>` blocks, `onclick=` handlers and `style=` attributes. Moving the JavaScript into static files would let the CSP drop `'unsafe-inline'` for scripts.
 
 ### Rate limits
 
@@ -139,7 +139,10 @@ Only these routes are public:
 |------------------|-------------------------|
 | `/register`      | create an account (invite code) |
 | `/login`         | sign in                 |
-| `/static/...`    | CSS, JS, icons, PWA files |
+| `/static/...`    | CSS, JS, icons          |
+| `/manifest.webmanifest` | web app manifest |
+| `/sw.js`         | service worker (no-cache, version filled in by the app) |
+| `/offline`       | the offline page shell (no user data, no CSRF token) |
 
 Everything else needs login. A single `before_request` check in `app/main.py` sends logged-out requests to `/login?next=...`, so new routes are private by default. Book routes also check ownership:
 
@@ -159,6 +162,11 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/page_text/<book_id>/<page>`     | page text preview                        |
 | `/save_progress`                  | save page, speed, voice (POST, JSON with `book_id`) |
 | `/delete/<book_id>`               | delete a book and all its files (POST)   |
+| `/downloads`                      | Downloads screen (drawn from the device) |
+| `/offline/manifest/<book_id>`     | everything to download one finished book (409 while processing) |
+| `/offline/size/<book_id>`         | quick size estimate for the confirm step and the suggestion |
+| `/offline/books`                  | the user's book ids (to drop downloads of deleted books) |
+| `/offline/csrf`                   | a fresh CSRF token for syncing progress saved offline |
 
 Routes take the book's database id rather than the filename, which also avoids problems with spaces and special characters in URLs.
 
@@ -175,6 +183,52 @@ Audio keeps playing while you move around the app, like Spotify.
 - Deleting the book in the player (or one that is still opening) stops and clears the player and its lock-screen details.
 - The Back button closes the top layer first (a bottom sheet, then the full player) instead of leaving the page. `Layers` in `static/js/sheets.js` pushes a history entry at the same address when a layer opens and steps back over it when the layer is closed another way, so history and the screen stay in step. Its `popstate` listener runs before htmx's and stops it when the Back only closed a layer.
 - CSRF tokens don't expire on a timer (`WTF_CSRF_TIME_LIMIT = None`), because the shell's token stays in use for the whole session; they are still tied to the session.
+
+## Offline listening (PWA)
+
+Code: `app/sw.js` (service worker, served at `/sw.js`), `static/js/offline.js` (downloads, storage, sync, the Downloads screen and the offline page), small hooks in `player.js` and `app.js`.
+
+### Installing
+
+`/manifest.webmanifest`: name WAudible, `display: standalone`, `start_url /`, background `#121212`, theme `#E95420`, icons at 192 and 512 (`static/icons/`, made from `assets/waudible.png`) and a maskable 512. `/sw.js` is served with `Cache-Control: no-cache`, and the app writes a version into it (a hash of the worker, the shell files and the templates), so any change installs a new worker, which takes over straight away and deletes the old shell cache.
+
+### What the service worker does
+
+| Request | Strategy |
+|---|---|
+| Page navigations | Network first. With no network, the precached `/offline` page. Pages are never cached. |
+| App shell (`/offline`, the manifest, CSS, scripts, icons) | Cache first, from `waudible-shell-<version>` (precached on install) |
+| Google Fonts stylesheet and font files | Cache first, from `waudible-fonts-v1` |
+| `/audio/...` and `/cover/...` | Cache first from the signed-in user's own `waudible-media-u<user id>`, else the network. Range requests get `206` with `Content-Range` (or `416`), so seeking and lock-screen scrubbing work offline. |
+| Everything else (JSON, form posts, `/offline/*` routes) | Network only, never cached |
+
+The worker only reads the media caches; `offline.js` is the only thing that writes to them. It knows who is signed in from a `{type: 'user'}` message that each page sends and from IndexedDB. The login and register pages (`static/js/signed-out.js`) tell it that nobody is, so it serves no one's downloads until the next account's first page.
+
+### Downloading a book
+
+1. The card menu and the player's More sheet have "Download for offline", enabled only when the book's status is `ready` and the device is online. The confirm step shows `/offline/size` (exact audio sizes plus a guess for covers and text) and says only the current voice is downloaded.
+2. `navigator.storage.persist()` is requested, and `navigator.storage.estimate()` must show room for the book (plus a margin), or a clear message is shown instead.
+3. `/offline/manifest/<id>` gives the title, author, genre, page count, contents, cover URL, every page's text, and for the user's current voice the URL and byte size of every page's audio, the cover and the three lock-screen artwork sizes.
+4. Files are fetched one at a time into `waudible-media-u<user id>`, under the same URLs the player uses, and each one's size must match the manifest. A progress ring shows on the cover and in the sheet, and the download can be cancelled (which removes what was saved). If it stops part way (connection lost, app closed), the next online visit carries on, skipping files already saved.
+5. IndexedDB `waudible` holds, keyed by `[user id, book id]`: `books` (details, contents, page text, file list, size, voice, complete or not) and `progress` (page, speed, voice, time, synced or not); `meta` holds the signed-in user for the offline page.
+
+### Playing
+
+`Player.open` uses a complete downloaded copy when there is one, online too (it saves data). With no network the details, contents and page text come from IndexedDB, and the audio and artwork from the cache through the worker, so the mini player, Media Session, speed, sleep timer and contents drawer work as usual. Offline, the voice picker is disabled with a note, Add and Delete explain that they need a connection, books that aren't downloaded are dimmed, and opening one shows a short message instead of an error. An Offline badge shows in the header.
+
+### Progress
+
+Every save goes to IndexedDB first, then to `/save_progress`. A save that can't be sent stays marked unsynced. When the connection is back (and on every online page load), `offline.js` gets a fresh token from `/offline/csrf` and sends each unsynced position with its time (`at`, ms). The server ignores a position older than the one it has (`{"status": "stale"}`) and otherwise saves it with that time (never later than now). A failed send keeps the position for the next try. When a downloaded book opens online, a newer unsynced position on the device wins over the server's.
+
+### The suggestion
+
+When a ready book that isn't downloaded is opened online, a sheet offers to download it: "Download for offline listening? About X MB. Streaming uses data and stops when your connection drops." Download, Not now (asks again after a week), or Don't ask again for this book, remembered in `localStorage` per user and book. It isn't shown while the book is processing, when there isn't room, when the book is already on the device, or more than once per visit.
+
+### Cleanup and accounts
+
+- On every online page load the device compares its downloads with `/offline/books` and deletes copies of books that no longer exist. Deleting a book in the app deletes its copy straight away.
+- Logging out first says how many downloaded books (and how much space) will be deleted, then deletes that user's downloads, progress, cached name and suggestion choices, and only then posts the logout.
+- Everything is keyed by user id, so another account on the same browser never sees or gets served someone else's downloads.
 
 ## Upload rules
 

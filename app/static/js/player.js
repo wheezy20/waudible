@@ -77,25 +77,38 @@
         }
         audioEl.pause();
 
-        let data;
-        try {
-            const res = await fetch(`/player/${id}`, { headers: { 'Accept': 'application/json' } });
-            if (res.redirected && new URL(res.url).pathname === '/login') {
-                window.location.href = res.url;   // session ended: full page login
-                return;
-            }
-            if (!res.ok) throw new Error(res.status);
-            data = await res.json();
-        } catch (e) {
-            App.toast("That book couldn't be opened.");
-            return;
+        // A copy downloaded to this device plays from there (online too,
+        // which saves data); with no network it is the only way to play
+        let local = await Offline.localBook(id);
+        let data = null;
+        if (Offline.isOnline()) {
+            try {
+                const res = await fetch(`/player/${id}`, { headers: { 'Accept': 'application/json' } });
+                if (res.redirected && new URL(res.url).pathname === '/login') {
+                    window.location.href = res.url;   // session ended: full page login
+                    return;
+                }
+                if (res.status === 404 && local) { Offline.remove(id); local = null; }   // deleted on the server
+                if (!res.ok) throw new Error(res.status);
+                data = await res.json();
+            } catch (e) { data = null; }      // no network after all: the downloaded copy, if any
         }
         if (token !== openToken) return;     // another book opened, or the player was cleared
+        if (local) data = await Offline.playerData(local, data);
+        if (token !== openToken) return;
         pendingId = null;
+        if (!data) {
+            App.toast(Offline.isOnline() && navigator.onLine
+                ? "That book couldn't be opened."
+                : "You're offline and this book isn't downloaded. It plays again when you're back online.");
+            return;
+        }
 
         load(data);
         if (expand) expandSheet();
         loadPage(data.page, autoplay);
+        // Suggest downloading a finished book instead of streaming it
+        setTimeout(() => Offline.maybeAsk(book), 900);
     }
 
     function load(data) {
@@ -106,6 +119,7 @@
         readyPages  = new Set();
         tocChapters = [];
         preloadedKey = null;
+        if (data.local) readyPages = allPages();
 
         $('player-title').textContent  = data.title;
         $('player-author').textContent = data.author;
@@ -122,18 +136,62 @@
 
         tocList.innerHTML = '<p class="toc-loading">Loading...</p>';
         loadToc(data.id);
+        updateDownloadAction();
+        syncNetworkUi();
 
         // Readiness dots keep updating while the book is still processing
         clearInterval(readinessTimer);
+        if (data.local) return;              // every page is on this device
         readinessTimer = setInterval(async () => {
-            if (!book || book.id !== data.id) return;
+            if (!book || book.id !== data.id || !Offline.isOnline()) return;
             await updateTocReadiness();
             try {
                 const s = await (await fetch(`/status/${data.id}`)).json();
-                if (!s.running) clearInterval(readinessTimer);
+                if (!s.running) {
+                    clearInterval(readinessTimer);
+                    if (book && book.id === data.id && book.running) { book.running = false; updateDownloadAction(); }
+                }
             } catch (e) { /* try again next tick */ }
         }, 5000);
     }
+
+    const allPages = () => new Set(Array.from({ length: book ? book.pages : 0 }, (_, i) => i));
+    // Playing from the downloaded copy (its voice, on this device)
+    const fromDevice = () => !!(book && book.local && voiceEl.value === book.local.voice);
+
+    // "Download for offline" in the More sheet acts on this book
+    function updateDownloadAction() {
+        const btn = $('more-download');
+        if (book) {
+            btn.dataset.bookId = book.id;
+            btn.dataset.title  = book.title;
+            btn.dataset.ready  = book.running ? '0' : '1';
+        } else {
+            delete btn.dataset.bookId;
+        }
+        Offline.updateActions();
+    }
+
+    // With no network: only the downloaded voice, and say why
+    function syncNetworkUi() {
+        const off = !Offline.isOnline();
+        const note = $('voice-note');
+        if (off && book && book.local && voiceEl.value !== book.local.voice) {
+            voiceEl.value = book.local.voice;
+            readyPages = allPages();
+            updateTocReadiness();
+        }
+        voiceEl.disabled = off;
+        let text = '';
+        if (off) text = book && book.local
+            ? `Offline: playing the downloaded voice (${book.local.voice}). Other voices need a connection.`
+            : 'Other voices need a connection.';
+        else if (book && book.local && voiceEl.value !== book.local.voice)
+            text = `Downloaded with ${book.local.voice}. This voice streams over your connection.`;
+        note.textContent = text;
+        note.hidden = !text;
+    }
+    document.addEventListener('waudible:network', syncNetworkUi);
 
     // ── CLEAR (book deleted) ──
     function clear() {
@@ -148,6 +206,7 @@
         preloadEl.removeAttribute('src');
         preloadedKey = null;
         book = null;
+        updateDownloadAction();
         miniEl.hidden = true;
         document.body.classList.remove('has-mini');
         showPlaying(false);
@@ -235,7 +294,18 @@
     $('btn-next').addEventListener('click', () => changePage(1));
     $('jump-go').addEventListener('click', jumpToPage);
     $('jump-input').addEventListener('keydown', e => { if (e.key === 'Enter') jumpToPage(); });
-    voiceEl.addEventListener('change', () => loadPage(currentPage));
+    voiceEl.addEventListener('change', () => {
+        readyPages = fromDevice() ? allPages() : new Set();
+        syncNetworkUi();
+        updateTocReadiness();
+        loadPage(currentPage);
+    });
+
+    // A page that can't load with no network: explain instead of spinning
+    audioEl.addEventListener('error', () => {
+        if (!book || !audioEl.getAttribute('src')) return;
+        if (!Offline.isOnline() || !navigator.onLine) setStatus("Offline: this page isn't on this device");
+    });
 
     // ── PLAY / PAUSE AND SKIP 15 SECONDS ──
     function togglePlay() {
@@ -359,6 +429,11 @@
     // ── PAGE TEXT ──
     async function fetchPageText(page) {
         const id = book.id;
+        if (book.local) {
+            textBoxEl.textContent = book.local.texts[page] || "[No text on this page]";
+            $('text-preview').textContent = textBoxEl.textContent;
+            return;
+        }
         try {
             const res  = await fetch(`/page_text/${id}/${page}`);
             const data = await res.json();
@@ -371,19 +446,26 @@
     }
 
     // ── SAVE PROGRESS (works while the sheet is collapsed) ──
+    // Kept on this device first (IndexedDB), then sent to the server.
+    // Offline, or if sending fails, offline.js sends it when the
+    // connection is back.
     function saveProgress() {
         if (!book) return Promise.resolve();
+        const id = book.id, p = { page: currentPage, speed: speed, voice: voiceEl.value };
+        const saved = Offline.saveProgress(id, p);
+        if (!Offline.isOnline()) return saved;
         return fetch('/save_progress', {
             method : 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-            body   : JSON.stringify({ book_id: book.id, page: currentPage, speed: speed, voice: voiceEl.value }),
-        }).catch(() => {});
+            body   : JSON.stringify({ book_id: id, ...p }),
+        }).then(async res => { if (res.ok) Offline.markSynced(id, await saved); }).catch(() => {});
     }
 
     // ── CONTENTS ──
     async function loadToc(id) {
         let chapters = [];
-        try { chapters = await (await fetch(`/toc/${id}`)).json(); } catch (e) { /* none */ }
+        if (book && book.local) chapters = book.local.toc || [];
+        else try { chapters = await (await fetch(`/toc/${id}`)).json(); } catch (e) { /* none */ }
         if (!book || book.id !== id) return;
         tocList.innerHTML = '';
         // PDFs without a contents list get "Page N" entries every 10 pages;
@@ -428,11 +510,17 @@
     async function updateTocReadiness() {
         if (!book) return;
         const id = book.id;
-        try {
-            const data = await (await fetch(`/readiness/${id}?voice=${voiceEl.value}`)).json();
-            if (!book || book.id !== id) return;
-            readyPages = new Set(data.ready);
-        } catch (e) { return; }
+        if (fromDevice()) {
+            readyPages = allPages();
+        } else if (!Offline.isOnline()) {
+            return;
+        } else {
+            try {
+                const data = await (await fetch(`/readiness/${id}?voice=${voiceEl.value}`)).json();
+                if (!book || book.id !== id) return;
+                readyPages = new Set(data.ready);
+            } catch (e) { return; }
+        }
         document.querySelectorAll('.toc-dot').forEach(dot => {
             const page = parseInt(dot.id.replace('dot-', ''));
             dot.classList.toggle('dot-ready',      readyPages.has(page));
@@ -696,6 +784,8 @@
     // Save on the way out (tab closed or reloaded)
     window.addEventListener('pagehide', () => {
         if (!book) return;
+        Offline.saveProgress(book.id, { page: currentPage, speed: speed, voice: voiceEl.value });
+        if (!Offline.isOnline()) return;
         const body = new Blob([JSON.stringify({ book_id: book.id, page: currentPage, speed: speed, voice: voiceEl.value })],
                               { type: 'application/json' });
         // sendBeacon can't set the CSRF header, so use a keepalive fetch
@@ -714,6 +804,7 @@
         open, clear, forget,
         expand: expandSheet, collapse: collapseSheet, isExpanded,
         bookId: () => (book ? book.id : null),
+        fromDevice,
     };
     window.changePage = changePage;
     window.jumpToPage = jumpToPage;

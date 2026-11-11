@@ -21,6 +21,7 @@ It started as a single-user app on localhost and is now a small multi-user web a
 - **Genre shelves.** Books sit on shelves (Self Help, Academic, Christian, or your own), with filter chips, cover art (yours or generated initials) and a Continue listening row.
 - **Contents drawer.** Jump to any chapter from the PDF's table of contents, with dots showing which pages are ready.
 - **Player controls.** Speed from 0.75x to 2x (changed in the browser, so no new audio is needed), six voices, 15 second skips, jump to page, sleep timer, and the page text.
+- **Offline listening.** Install WAudible to your home screen and download a finished book to the phone. It then plays with no connection, from the lock screen too, with seeking, chapters, speed and the sleep timer. The app suggests downloading a ready book instead of streaming it. Library, Downloads lists what is on the device and how much space it uses. Progress made offline is sent to the server when you're back online.
 - **Picks up where you left off**, on any device.
 - **Works on phones, tablets and desktop.**
 
@@ -143,11 +144,22 @@ The tunnel's credentials and certificate stay in `~/.cloudflared`, outside the r
 
 ## Tests
 
-The test suites cover sign-up and login, per-user privacy, uploads, the audio worker, the production settings, request logging, and the player in headless Chrome (navigation, the Back button and the lock-screen controls). They write to the database, so they only run on a temporary Neon branch and refuse to start against production. Kokoro is replaced by a fake, so they are quick and need no model files. See [`tests/README.md`](tests/README.md), then:
+The test suites cover sign-up and login, per-user privacy, uploads, the audio worker, the production settings, request logging, and the player in headless Chrome (navigation, the Back button, the lock-screen controls and offline listening). They write to the database, so they only run on a temporary Neon branch and refuse to start against production. Kokoro is replaced by a fake, so they are quick and need no model files. See [`tests/README.md`](tests/README.md), then:
 
 ```bash
 ./run_tests.sh
 ```
+
+## Offline listening and its limits
+
+- A download is the audio for **one voice**, the one you listen with when you download it. Other voices still need a connection.
+- Only **finished** books can be downloaded; a book still being prepared shows the option disabled until its audio is ready.
+- Downloads happen while WAudible is open. If the app is closed or the connection drops part way, the download carries on from where it stopped the next time WAudible is open and online.
+- With no connection, uploading, deleting books, changing voice and books that aren't downloaded are unavailable, and the app says so.
+- Downloads use the browser's storage. WAudible asks the browser to keep them (persistent storage), but the browser or the phone can still clear them if space runs out or site data is cleared. There must be room for the whole book before a download starts.
+- Positions saved offline are sent when you're back online. If you also listened on another device in the meantime, the most recent position wins.
+- Downloads belong to the account that made them. Logging out deletes them from the device. Another account signed in on the same browser never sees them.
+- Downloaded books are stored unencrypted in the browser's storage on the phone.
 
 ## Security
 
@@ -165,6 +177,7 @@ WAudible is a hobby project for a small group of invited people. Here is what it
 - **Headers**: Content-Security-Policy, X-Frame-Options DENY, X-Content-Type-Options nosniff and a strict Referrer-Policy.
 - **Network**: the app listens on 127.0.0.1 only and is reached through Cloudflare Tunnel, which provides HTTPS.
 - **Debug mode** is off in production, and secrets live in `.env`, which is not in git.
+- **Offline data**: the service worker never caches pages, JSON or anything with a CSRF token; it keeps only the app's own files and the books a user chose to download, per account, and logging out deletes them.
 
 **Not in place**
 
@@ -195,8 +208,9 @@ app/
   limiter.py       Rate limits
   storage.py       Where each book's files live
   request_log.py   Slow request and database connect error logging
-  templates/       Page shell, player, cards, login and error pages
-  static/          CSS, htmx, player and page scripts
+  sw.js            Service worker (served at /sw.js): offline page, app shell, downloaded audio
+  templates/       Page shell, player, cards, Downloads, offline, login and error pages
+  static/          CSS, htmx, player, page and offline scripts, app icons
 deploy/            systemd unit and install steps
 tests/             Test suites (see tests/README.md)
 run_tests.sh       Runs every test suite against a temporary Neon branch
@@ -209,7 +223,7 @@ data/              Books, covers and audio (gitignored)
 
 ARCHITECTURE.md describes the design in more detail, PLAN.md the roadmap, and JOURNAL.md the history.
 
-The hosted version described here is on `main`. New work happens on `online-version` first and is merged in when it's ready. The original local, single-user version is still in the history (the first commit, `333a47e`).
+The hosted version described here is on `main`. Each change is made on its own short-lived branch and merged through a pull request. The original local, single-user version is still in the history (the first commit, `333a47e`).
 
 ## Author
 
