@@ -2,6 +2,10 @@
 
 Newest entry first.
 
+## 11 Nov 2026
+
+- Added slow request logging (`app/request_log.py`). Every request is timed from before the login check, and one slower than 3 seconds writes a single WARNING line to the journal with the method, the route pattern (for example `/audio/<int:book_id>/<int:page>`, never the real path or query string), the status and the time. Database connect errors now write one ERROR line with the error type and the first line of the driver's message, with anything quoted, IP addresses and the parts of the connection string masked. Testing found an older bug: while the database was unreachable, the friendly 500 page itself crashed, because Flask-Login loads the user whenever a template renders, so the visitor got a bare error. It now falls back to a plain page. Tested on a new Neon test branch (`tests-reqlog-20261111`, expires 13 Nov 2026 at 23:59 UTC) with 20 checks. `online-version` is on GitHub now (Eyram pushed it).
+
 ## 4 Nov 2026
 
 - Prepared the repo for GitHub. Scanned the working tree and all 14 commits (140 file versions and every commit message) for the real values in `.env` and `.neon` and for common secret patterns: nothing leaked. The only matches were placeholders in `.env.example`, the word "production" and the Neon project id. `.env`, `.neon`, tunnel files, model files and `data/` were never committed, and `.gitignore` now also covers `.env.*`, Cloudflare Tunnel credentials and config, keys, `*.deb` and the whole `data/` folder. Rewrote the README for the hosted version (features, stack, setup from scratch, production with systemd and the tunnel, and a Security section listing what is and isn't in place) and removed the old "localhost only, no login" note. No license yet. The push of `online-version` failed because this machine has no GitHub login for git (no credential helper, and the local SSH key isn't added to GitHub), so it still has to be pushed by hand; `main` is unchanged. The service, the tunnel and DNS are live: `https://waudible.eyramwilson.dev/login` answers through Cloudflare, though one request in three timed out during the check.

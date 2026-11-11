@@ -111,9 +111,15 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Secrets check of the working tree and the full git history (nothing found)
 - [x] `.gitignore` covers `.env` files, `.neon`, Cloudflare Tunnel files, `*.deb`, keys, model files and all of `data/`
 - [x] README rewritten for the hosted version, with an honest Security section
-- [ ] Push `online-version` to GitHub (needs Eyram's GitHub login, see JOURNAL)
+- [x] Push `online-version` to GitHub
 - [ ] Choose a license (none added yet)
 - [ ] Merge `online-version` into `main` (later, when Eyram decides)
+
+## Logging
+
+- [x] One WARNING line for every request slower than 3 seconds (method, route pattern, status, time; no ids, query strings, bodies, cookies or emails)
+- [x] Database connect errors logged as one ERROR line, with hosts, addresses, users and database names masked
+- [x] The 500 page still renders while the database is down
 
 ## 6. PWA offline mode
 
