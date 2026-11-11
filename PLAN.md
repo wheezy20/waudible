@@ -121,6 +121,14 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Database connect errors logged as one ERROR line, with hosts, addresses, users and database names masked
 - [x] The 500 page still renders while the database is down
 
+## Test suites in the repo
+
+- [x] `tests/` with a shared helper that refuses to run against the production database
+- [x] Suites: auth, books and privacy, worker, request logging, production settings, and navigation, Back button and lock screen in headless Chrome
+- [x] Fake Kokoro, throwaway secrets and a temporary data folder (`WAUDIBLE_DATA_DIR`), so tests never touch `data/` or the real keys
+- [x] `run_tests.sh` with a pass/fail summary and cleanup after failures and timeouts
+- [x] `tests/README.md`: creating a branch, exporting its URLs for the test run only, running everything
+
 ## 6. PWA offline mode
 
 - [ ] Web app manifest and service worker

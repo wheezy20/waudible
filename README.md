@@ -57,7 +57,6 @@ ffmpeg must include the MP3 encoder (libmp3lame), which the Ubuntu package does.
 ```bash
 git clone https://github.com/wheezy20/waudible.git
 cd waudible
-git checkout online-version
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -142,6 +141,14 @@ sudo cloudflared service install
 
 The tunnel's credentials and certificate stay in `~/.cloudflared`, outside the repo (they are also gitignored in case they are ever copied in).
 
+## Tests
+
+The test suites cover sign-up and login, per-user privacy, uploads, the audio worker, the production settings, request logging, and the player in headless Chrome (navigation, the Back button and the lock-screen controls). They write to the database, so they only run on a temporary Neon branch and refuse to start against production. Kokoro is replaced by a fake, so they are quick and need no model files. See [`tests/README.md`](tests/README.md), then:
+
+```bash
+./run_tests.sh
+```
+
 ## Security
 
 WAudible is a hobby project for a small group of invited people. Here is what it does and doesn't do.
@@ -187,9 +194,12 @@ app/
   artwork.py       Square cover art for the lock screen
   limiter.py       Rate limits
   storage.py       Where each book's files live
+  request_log.py   Slow request and database connect error logging
   templates/       Page shell, player, cards, login and error pages
   static/          CSS, htmx, player and page scripts
 deploy/            systemd unit and install steps
+tests/             Test suites (see tests/README.md)
+run_tests.sh       Runs every test suite against a temporary Neon branch
 init_db.py         Creates the database tables
 run.sh             Local development server
 run_prod.sh        Production server (gunicorn)
@@ -199,7 +209,7 @@ data/              Books, covers and audio (gitignored)
 
 ARCHITECTURE.md describes the design in more detail, PLAN.md the roadmap, and JOURNAL.md the history.
 
-The `main` branch is the original local, single-user version. The hosted version described here lives on `online-version`.
+The hosted version described here is on `main`. New work happens on `online-version` first and is merged in when it's ready. The original local, single-user version is still in the history (the first commit, `333a47e`).
 
 ## Author
 
