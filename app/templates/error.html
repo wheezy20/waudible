@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ title }} | WAudible</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-body">
+
+<!-- No user nav here: error pages must render even if the database is down -->
+<header>
+    <div class="header-inner">
+        <a href="/" class="logo logo-link">
+            <span class="logo-w">W</span>Audible
+        </a>
+        <p class="tagline">Your personal audiobook library</p>
+    </div>
+</header>
+
+<main class="auth-main">
+    <section class="auth-card error-card">
+        <p class="error-code">{{ code }}</p>
+        <h1 class="auth-title">{{ title }}</h1>
+        <p class="auth-subtitle">{{ message }}</p>
+        <a href="/" class="btn btn-primary btn-pill error-home">Back to my library</a>
+    </section>
+</main>
+
+</body>
+</html>

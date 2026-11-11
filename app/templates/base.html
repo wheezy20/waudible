@@ -1,0 +1,127 @@
+{% from "_icons.html" import icon %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#121212">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {# No eval (CSP), no history snapshots in localStorage (user data), back
+       button asks the server for the page instead #}
+    <meta name="htmx-config" content='{"allowEval": false, "historyCacheSize": 0, "includeIndicatorStyles": false, "scrollIntoViewOnBoost": false}'>
+    <title>{% block title %}WAudible{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+{# Links and forms inside the shell load into #app-content (htmx boost) #}
+<body class="app-body" hx-boost="true" hx-target="#app-content" hx-swap="innerHTML show:window:top">
+
+<header class="app-header" id="app-header">
+    <div class="header-inner">
+        <a href="/" class="logo logo-link"><span class="logo-w">W</span>Audible</a>
+        <nav class="top-nav" aria-label="Main">
+            <a href="/" class="top-nav-item" data-nav="home">Home</a>
+            <a href="/library" class="top-nav-item" data-nav="library">Library</a>
+        </nav>
+        {% include "_user_nav.html" %}
+    </div>
+</header>
+
+{# The only part that changes when navigating #}
+<main id="app-content" hx-history-elt>
+    {% block content %}{% endblock %}
+</main>
+
+{% include "_player.html" %}
+
+<!-- Floating add button (tablets and desktop; phones use the bottom bar) -->
+<button type="button" class="fab" data-sheet-open="add-sheet" aria-label="Add a book"
+        aria-haspopup="dialog" aria-controls="add-sheet">{{ icon("plus", 28) }}</button>
+
+<!-- ── BOTTOM NAVIGATION (phones) ── -->
+<nav class="bottom-nav" id="bottom-nav" aria-label="Main">
+    <a href="/" class="nav-item" data-nav="home">{{ icon("home", 24) }}<span>Home</span></a>
+    <a href="/library" class="nav-item" data-nav="library">{{ icon("library", 24) }}<span>Library</span></a>
+    <button type="button" class="nav-item" data-sheet-open="add-sheet" aria-haspopup="dialog"
+            aria-controls="add-sheet">{{ icon("plus", 24) }}<span>Add</span></button>
+</nav>
+
+<!-- ── ADD A BOOK (bottom sheet) ── -->
+<div class="sheet" id="add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="add-title">Add a book</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+
+    {# Upload errors from the last request are copied here by app.js #}
+    <div id="add-alerts"></div>
+
+    <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form" id="upload-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label class="file-pick">
+            <span class="file-icon">{{ icon("upload", 22) }}</span>
+            <span class="file-text">
+                <span class="file-label-title">PDF file</span>
+                <span class="file-chosen" id="pdf-chosen">Choose a PDF</span>
+            </span>
+            <input type="file" name="pdf" accept=".pdf,application/pdf" required>
+        </label>
+
+        <label class="file-pick">
+            <span class="file-icon">{{ icon("image", 22) }}</span>
+            <span class="file-text">
+                <span class="file-label-title">Cover image (optional)</span>
+                <span class="file-chosen" id="cover-chosen">JPG, PNG or WebP</span>
+            </span>
+            <input type="file" name="cover" accept=".jpg,.jpeg,.png,.webp">
+        </label>
+
+        <div class="form-group">
+            <label class="form-label" for="genre-select">Shelf</label>
+            <select name="genre" class="field" id="genre-select">
+                {% for g in preset_genres %}
+                <option value="{{ g }}">{{ g }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="custom_genre" class="field" id="custom-genre"
+                   placeholder="Or type a new shelf name" maxlength="100">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-pill btn-block">Upload book</button>
+    </form>
+</div>
+
+<!-- ── BOOK OPTIONS (bottom sheet) ── -->
+<div class="sheet" id="book-sheet" role="dialog" aria-modal="true" aria-labelledby="book-sheet-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title clamp-2" id="book-sheet-title">Book</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+
+    <div class="sheet-list" id="book-actions">
+        <button type="button" class="sheet-item" id="book-open">{{ icon("play", 22) }}<span>Play</span></button>
+        <button type="button" class="sheet-item danger" id="book-delete">{{ icon("trash", 22) }}<span>Delete book</span></button>
+    </div>
+
+    <!-- Confirm step -->
+    <div class="confirm" id="book-confirm" hidden>
+        <p class="confirm-text">Delete <strong id="confirm-title"></strong> and all its audio? This can't be undone.</p>
+        {# Not boosted: htmx would keep the action from page load; app.js submits it #}
+        <form method="POST" id="delete-form" class="confirm-actions" hx-boost="false">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="button" class="btn btn-ghost btn-pill" id="confirm-cancel">Cancel</button>
+            <button type="submit" class="btn btn-danger-solid btn-pill">Delete</button>
+        </form>
+    </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sheets.js') }}"></script>
+<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

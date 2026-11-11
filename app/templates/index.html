@@ -1,185 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WAudible</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
+{% extends layout %}
+{% from "_cards.html" import book_card, shelves_section, empty_state %}
 
-<header>
-    <div class="header-inner">
-        <div class="logo">
-            <span class="logo-w">W</span>Audible
-        </div>
-        <p class="tagline">Your personal audiobook library</p>
-    </div>
-</header>
+{% block title %}{{ "Library" if view == "library" else "Home" }} | WAudible{% endblock %}
 
-<main>
+{% block content %}
+{# Read by app.js after every load or swap #}
+<div class="page" data-view="{{ view }}" {% if open_book %}data-open-book="{{ open_book }}"{% endif %}>
 
-    <!-- ── UPLOAD SECTION ── -->
-    <section class="upload-section">
-        <h2 class="section-title">Add a Book</h2>
-        <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
-
-            <!-- PDF upload -->
-            <div class="form-group">
-                <label class="form-label">PDF File *</label>
-                <label class="file-label" id="pdf-label">
-                    <span class="file-icon">📄</span>
-                    <span id="pdf-chosen">Choose a PDF file...</span>
-                    <input type="file" name="pdf" accept=".pdf" required
-                           onchange="document.getElementById('pdf-chosen').textContent = this.files[0].name">
-                </label>
-            </div>
-
-            <!-- Cover image upload -->
-            <div class="form-group">
-                <label class="form-label">Cover Image (optional)</label>
-                <label class="file-label" id="cover-label">
-                    <span class="file-icon">🖼</span>
-                    <span id="cover-chosen">Upload cover image...</span>
-                    <input type="file" name="cover" accept=".jpg,.jpeg,.png,.webp"
-                           onchange="document.getElementById('cover-chosen').textContent = this.files[0].name">
-                </label>
-            </div>
-
-            <!-- Genre selector -->
-            <div class="form-group">
-                <label class="form-label">Genre / Shelf</label>
-                <div class="genre-row">
-                    <select name="genre" class="genre-select" id="genre-select">
-                        {% for g in preset_genres %}
-                        <option value="{{ g }}">{{ g }}</option>
-                        {% endfor %}
-                    </select>
-                    <span class="genre-or">or</span>
-                    <input type="text" name="custom_genre" class="genre-input"
-                           placeholder="Type custom genre..."
-                           oninput="document.getElementById('genre-select').disabled = this.value.length > 0">
-                </div>
-            </div>
-
-            <button type="submit" class="btn btn-primary">Upload Book</button>
-        </form>
-    </section>
-
-    <!-- ── LIBRARY SHELVES ── -->
-    <section class="library-section">
-        <h2 class="section-title">My Library</h2>
-
-        {% if shelves %}
-            {% for genre, books in shelves.items() %}
-            <div class="shelf">
-                <h3 class="shelf-title">{{ genre }}</h3>
-                <div class="shelf-row">
-                    {% for book in books %}
-                    {% set card_id = book.filename | replace('.', '-') | replace(' ', '-') %}
-                    <div class="book-card" id="card-{{ card_id }}">
-
-                        <!-- Cover art (clickable) -->
-                        <a href="/read/{{ book.filename }}" class="cover-wrap">
-                            {% if book.cover %}
-                                <img src="/cover/{{ book.cover }}"
-                                     alt="{{ book.title }}" class="cover-img">
-                            {% else %}
-                                <div class="cover-auto">
-                                    <span class="cover-initials">
-                                        {{ book.title[:2].upper() }}
-                                    </span>
-                                </div>
-                            {% endif %}
-
-                            <!-- Processing overlay -->
-                            {% if book.running or book.processed < book.pages %}
-                            <div class="cover-overlay">
-                                <div class="overlay-text">
-                                    <span id="done-{{ card_id }}">{{ book.processed }}</span>/{{ book.pages }}
-                                </div>
-                                <div class="overlay-bar-bg">
-                                    <div class="overlay-bar-fill"
-                                         id="bar-{{ card_id }}"
-                                         style="width:{{ ((book.processed / book.pages) * 100) | round }}%">
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </a>
-
-                        <!-- Book info -->
-                        <div class="card-info">
-                            <p class="card-title">{{ book.title }}</p>
-                            <p class="card-author">{{ book.author }}</p>
-                            {% if book.current_page > 0 %}
-                            <p class="card-progress">
-                                Page {{ book.current_page + 1 }} of {{ book.pages }}
-                            </p>
-                            {% endif %}
-                            {% if not book.running and book.processed >= book.pages %}
-                            <p class="card-ready">✅ Ready</p>
-                            {% endif %}
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="card-actions">
-                            <a href="/read/{{ book.filename }}" class="btn btn-primary btn-sm">
-                                {% if book.current_page > 0 %}▶ Resume{% else %}▶ Play{% endif %}
-                            </a>
-                            <form action="/delete/{{ book.filename }}" method="POST"
-                                  onsubmit="return confirm('Delete this book and all its audio?')">
-                                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
-                            </form>
-                        </div>
-
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endfor %}
-
-        {% else %}
-            <div class="empty-state">
-                <p>📚 No books yet. Upload a PDF to get started!</p>
-            </div>
-        {% endif %}
-    </section>
-
-</main>
-
-<script>
-    // Poll processing status every 3 seconds for books still being processed
-    const processing = [
-        {% for genre, books in shelves.items() %}
-            {% for book in books %}
-                {% if book.running or book.processed < book.pages %}
-                "{{ book.filename }}",
-                {% endif %}
-            {% endfor %}
+    {# Upload errors; app.js shows them in the Add sheet #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="page-flash" hidden>
+        {% for category, message in messages %}
+        <p role="alert" class="auth-alert upload-alert">{{ message }}</p>
         {% endfor %}
-    ];
+    </div>
+    {% endif %}
+    {% endwith %}
 
-    processing.forEach(filename => {
-        const safeId = filename.replace(/\./g, '-').replace(/ /g, '-');
-        const barEl  = document.getElementById('bar-'  + safeId);
-        const doneEl = document.getElementById('done-' + safeId);
-        if (!barEl || !doneEl) return;
+    <div class="home-main">
+    {% if shelves %}
 
-        const interval = setInterval(async () => {
-            const res  = await fetch('/status/' + filename);
-            const data = await res.json();
-            const pct  = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
-            barEl.style.width  = pct + '%';
-            doneEl.textContent = data.done;
-            if (!data.running && data.done >= data.total) {
-                clearInterval(interval);
-                const overlay = barEl.closest('.cover-overlay');
-                if (overlay) overlay.remove();
-            }
-        }, 3000);
-    });
-</script>
+        {% if view == "home" and continue_listening %}
+        <!-- ── CONTINUE LISTENING ── -->
+        <section class="home-section" aria-labelledby="continue-title">
+            <h2 class="section-heading" id="continue-title">Continue listening</h2>
+            <div class="card-row">
+                {% for book in continue_listening %}
+                    {{ book_card(book, "c") }}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
 
-</body>
-</html>
+        {{ shelves_section(shelves, "h1" if view == "library" else "h2") }}
+
+    {% else %}
+        {{ empty_state() }}
+    {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,163 @@
+{# Persistent player: part of the shell in base.html, never swapped.
+   Filled in by static/js/player.js when a book is opened. #}
+{% from "_icons.html" import icon %}
+
+<!-- ── MINI PLAYER ── -->
+<div class="mini-player" id="mini-player" hidden>
+    <div class="mini-progress"><span id="mini-progress-fill"></span></div>
+    <button type="button" class="mini-open" id="mini-open" aria-label="Open player" aria-controls="player-sheet">
+        <img src="" alt="" class="mini-cover" id="mini-cover">
+        <span class="mini-text">
+            <span class="mini-title" id="mini-title"></span>
+            <span class="mini-sub" id="mini-sub"></span>
+        </span>
+    </button>
+    <button type="button" class="mini-play" id="mini-play" aria-label="Play">
+        <span class="icon-play">{{ icon("play", 26) }}</span>
+        <span class="icon-pause">{{ icon("pause", 26) }}</span>
+    </button>
+</div>
+
+<!-- ── FULL PLAYER (sheet over the current page) ── -->
+<section class="player-sheet" id="player-sheet" role="dialog" aria-modal="true" aria-label="Now playing" aria-hidden="true"
+         data-speeds="{{ speeds | tojson | forceescape }}">
+    <div class="player-glow" id="player-glow" aria-hidden="true"></div>
+
+    <div class="reader-layout">
+
+        <!-- Contents: sidebar on desktop, bottom sheet on small screens -->
+        <aside class="toc-sidebar" id="toc-sidebar" role="dialog" aria-label="Contents" aria-hidden="false">
+            <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+            <div class="toc-header">
+                <div class="toc-header-row">
+                    <span class="toc-title">Contents</span>
+                    <button type="button" class="icon-btn toc-close-btn" id="toc-close-btn"
+                            aria-label="Close contents">{{ icon("close", 22) }}</button>
+                </div>
+                <span class="toc-legend">
+                    <span class="legend-dot ready-dot-lg"></span> Ready
+                    <span class="legend-dot processing-dot-lg"></span> Not ready yet
+                </span>
+            </div>
+            <div class="toc-list" id="toc-list">
+                <p class="toc-loading">Loading...</p>
+            </div>
+        </aside>
+
+        <div class="player">
+
+            <div class="player-topbar" id="player-drag">
+                <button type="button" class="icon-btn" id="player-minimise" aria-label="Minimise player">{{ icon("chevron-down", 26) }}</button>
+                <p class="topbar-title">
+                    <span class="topbar-kicker" id="player-genre"></span>
+                    <span>Page <span id="page-number">1</span> of <span id="page-total">1</span></span>
+                </p>
+                <button type="button" class="icon-btn" id="more-btn" aria-label="More options"
+                        aria-haspopup="dialog" aria-controls="more-sheet">{{ icon("more", 24) }}</button>
+            </div>
+
+            <div class="player-cover">
+                <img src="" alt="" id="cover-img">
+            </div>
+
+            <div class="player-info">
+                <h1 class="player-title" id="player-title"></h1>
+                <p class="player-sub" id="player-sub"></p>
+                <p class="player-author" id="player-author"></p>
+            </div>
+
+            <!-- The one audio element for the whole session (never recreated) -->
+            <audio id="audio-player" preload="auto"></audio>
+
+            <div class="seek">
+                <input type="range" id="seek" class="seek-range" min="0" max="0" step="0.1" value="0"
+                       aria-label="Position in page" aria-valuetext="0:00">
+                <div class="seek-times">
+                    <span id="time-elapsed">0:00</span>
+                    <span class="player-status" id="player-status" role="status" aria-live="polite"></span>
+                    <span id="time-remaining">-0:00</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button type="button" class="ctrl ctrl-speed" id="speed-btn" aria-label="Playback speed">1x</button>
+                <button type="button" class="ctrl" id="back15-btn" aria-label="Back 15 seconds">{{ icon("back15", 30) }}</button>
+                <button type="button" class="ctrl ctrl-play" id="play-btn" aria-label="Play">
+                    <span class="icon-play">{{ icon("play", 30) }}</span>
+                    <span class="icon-pause">{{ icon("pause", 30) }}</span>
+                </button>
+                <button type="button" class="ctrl" id="fwd15-btn" aria-label="Forward 15 seconds">{{ icon("fwd15", 30) }}</button>
+                <button type="button" class="ctrl ctrl-sleep" id="sleep-btn" aria-label="Sleep timer: off"
+                        aria-haspopup="dialog" aria-controls="sleep-sheet">
+                    {{ icon("moon", 22) }}<span class="sleep-label" id="sleep-label"></span>
+                </button>
+            </div>
+
+            <div class="controls-sub">
+                <button type="button" class="ctrl ctrl-sm" id="btn-prev" aria-label="Previous page">{{ icon("prev", 22) }}<span class="ctrl-label">Previous page</span></button>
+                <button type="button" class="pill toc-open-btn" id="toc-open-btn"
+                        aria-controls="toc-sidebar" aria-expanded="false">{{ icon("list", 18) }} Contents</button>
+                <button type="button" class="ctrl ctrl-sm" id="btn-next" aria-label="Next page"><span class="ctrl-label">Next page</span>{{ icon("next", 22) }}</button>
+            </div>
+
+            <!-- Page text card; opens the full sheet -->
+            <button type="button" class="text-card" id="text-btn" aria-haspopup="dialog" aria-controls="text-sheet">
+                <span class="text-card-head">{{ icon("text", 18) }} Page text <span class="text-card-open">Show</span></span>
+                <span class="text-card-preview" id="text-preview">Loading...</span>
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- ── MORE (bottom sheet): voice and jump to page ── -->
+<div class="sheet sheet-over-player" id="more-sheet" role="dialog" aria-modal="true" aria-labelledby="more-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="more-title">More</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="voice">Voice</label>
+        <select id="voice" class="field">
+            {% for v in voices %}
+            <option value="{{ v }}">{{ v }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="jump-input">Jump to page (1 to <span id="jump-max">1</span>)</label>
+        <div class="jump-row">
+            <input type="number" id="jump-input" class="field" min="1" inputmode="numeric" placeholder="Page number">
+            <button type="button" class="btn btn-primary btn-pill" id="jump-go">Go</button>
+        </div>
+        <p class="field-error" id="jump-error" role="alert"></p>
+    </div>
+    <button type="button" class="sheet-item" id="more-library">{{ icon("library", 22) }}<span>Back to library</span></button>
+</div>
+
+<!-- ── SLEEP TIMER (bottom sheet) ── -->
+<div class="sheet sheet-over-player" id="sleep-sheet" role="dialog" aria-modal="true" aria-labelledby="sleep-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="sleep-title">Sleep timer</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <div class="sheet-list" role="radiogroup" aria-labelledby="sleep-title">
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="off">Off</button>
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="15">15 minutes</button>
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="30">30 minutes</button>
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="45">45 minutes</button>
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="60">60 minutes</button>
+        <button type="button" class="sheet-item sleep-opt" role="radio" data-sleep="page">End of page</button>
+    </div>
+</div>
+
+<!-- ── PAGE TEXT (full-height sheet) ── -->
+<div class="sheet sheet-full sheet-over-player" id="text-sheet" role="dialog" aria-modal="true" aria-labelledby="text-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="text-title">Page <span id="text-page">1</span></h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <div class="text-box" id="text-box" tabindex="0">Loading...</div>
+</div>

@@ -1,0 +1,12 @@
+<!-- Signed-in user and log out, shown on the right of the header -->
+<div class="user-nav">
+    {% if current_user.is_authenticated %}
+        <span class="user-name">{{ current_user.display_name }}</span>
+        <form action="{{ url_for('auth.logout') }}" method="POST" hx-boost="false" data-full-load>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost btn-pill btn-sm">Log out</button>
+        </form>
+    {% else %}
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-pill btn-sm">Log in</a>
+    {% endif %}
+</div>
