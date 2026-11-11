@@ -37,6 +37,18 @@ try:
                              cover_rgb=(40, 60, 110), author="James Clear", genre="Self Help", current_page=14, ready_pages=18)
     b2, _ = helpers.add_book(uid, "Mere Christianity", 3, author="C. S. Lewis", genre="Christian", ready_pages=3)
     b3, _ = helpers.add_book(uid, "Delete Me Later", 3, cover_rgb=(110, 40, 60), genre="Christian", ready_pages=3)
+    extra = {}
+    if name == "offline_check":
+        # Finished books to download, and a second account on the same browser
+        b4, _ = helpers.add_book(uid, "Offline Story", 4, toc=[[1, "Chapter One", 1], [1, "Chapter Two", 3]],
+                                 cover_rgb=(30, 90, 70), author="Ada Writer", genre="Fiction", ready_pages=4)
+        b5, _ = helpers.add_book(uid, "Second Story", 3, author="Ben Writer", genre="Fiction", ready_pages=3)
+        b6, _ = helpers.add_book(uid, "Third Story", 2, author="Cy Writer", genre="Fiction", ready_pages=2)
+        pw2 = helpers.password()
+        uid2 = helpers.create_user("browser2", pw2, "Second Person")
+        b7, _ = helpers.add_book(uid2, "Someone Else's Book", 2, genre="Fiction", ready_pages=2)
+        extra = {"BOOK4": str(b4), "BOOK5": str(b5), "BOOK6": str(b6), "BOOK7": str(b7),
+                 "EMAIL2": helpers.email("browser2"), "PASSWORD2": pw2}
     upload_pdf = os.path.join(helpers.DATA_DIR, "upload_test.pdf")
     with open(upload_pdf, "wb") as f:
         f.write(helpers.make_pdf(2))
@@ -49,7 +61,8 @@ try:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     env = {**os.environ, "BASE_URL": f"http://127.0.0.1:{port}", "BOOK1": str(b1), "BOOK2": str(b2), "BOOK3": str(b3),
-           "EMAIL": helpers.email("browser"), "PASSWORD": pw, "UPLOAD_PDF": upload_pdf, "OUT_DIR": helpers.DATA_DIR}
+           "EMAIL": helpers.email("browser"), "PASSWORD": pw, "UPLOAD_PDF": upload_pdf, "OUT_DIR": helpers.DATA_DIR,
+           "SHOT_DIR": os.environ.get("SHOT_DIR") or helpers.DATA_DIR, **extra}
     proc = subprocess.Popen(["node", os.path.join(HERE, script)], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
     for line in proc.stdout:

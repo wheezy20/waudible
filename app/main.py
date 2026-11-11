@@ -1,12 +1,14 @@
+import hashlib
+import json
 import logging
 import os
 from datetime import datetime, timezone
 from flask import (Flask, render_template, request, abort, flash,
                    send_file, redirect, url_for, jsonify, make_response)
 from flask_login import current_user
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
-from app.pdf_reader import extract_page, get_book_info, extract_toc
+from app.pdf_reader import extract_page, extract_pages, get_book_info, extract_toc
 from app.tts_engine import (text_to_audio, get_audio_path,
                             delete_book_audio, VOICES, SPEEDS)
 from app.storage import (new_storage_key, pdf_path, cover_path,
@@ -106,7 +108,9 @@ PRESET_GENRES = [
     "Fiction", "Biography", "Technology", "Other"
 ]
 
-PUBLIC_ENDPOINTS = {"auth.login", "auth.register", "static"}
+# The PWA files hold no user data, so they load without a session
+PUBLIC_ENDPOINTS = {"auth.login", "auth.register", "static",
+                    "web_manifest", "service_worker", "offline_page"}
 
 
 # ─────────────────────────────────────────
@@ -151,6 +155,8 @@ CSP = "; ".join([
     "img-src 'self' data:",
     "media-src 'self'",
     "connect-src 'self'",
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -163,7 +169,7 @@ def security_headers(response):
     response.headers["X-Content-Type-Options"]  = "nosniff"
     response.headers["X-Frame-Options"]         = "DENY"
     response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = CSP
+    response.headers.setdefault("Content-Security-Policy", CSP)
     return response
 
 
@@ -484,7 +490,14 @@ def player_data(book_id):
         "speed"   : progress.speed if progress else 1.0,
         "voice"   : progress.voice if progress else "af_heart",
         "running" : book.status == "processing",
+        # When the progress was saved (ms), so a downloaded copy's newer
+        # offline position can win
+        "updated" : _ms(progress.updated_at) if progress and progress.updated_at else 0,
     })
+
+
+def _ms(when: datetime) -> int:
+    return int(when.timestamp() * 1000)
 
 
 # ─────────────────────────────────────────
@@ -575,14 +588,26 @@ def save():
     if not 0 <= page < max(book.pages, 1):
         abort(400)
 
+    # Positions saved offline are sent later with the time they were
+    # made ("at", ms). The latest position wins: an older one is ignored.
+    now  = datetime.now(timezone.utc)
+    when = now
+    if data.get('at') is not None:
+        try:
+            when = min(datetime.fromtimestamp(float(data['at']) / 1000, timezone.utc), now)
+        except (TypeError, ValueError, OverflowError, OSError):
+            abort(400)
+
     if book.progress is None:
         book.progress = Progress()
+    elif when < now and book.progress.updated_at and book.progress.updated_at > when:
+        return jsonify({"status": "stale"})
     book.progress.current_page = page
     book.progress.speed        = speed
     book.progress.voice        = voice
     # Always counts as listened to (Continue listening), even when the
     # page, speed and voice are the same as before
-    book.progress.updated_at   = datetime.now(timezone.utc)
+    book.progress.updated_at   = when
     db.session.commit()
     return jsonify({"status": "saved"})
 
@@ -603,6 +628,196 @@ def delete_book(book_id):
     remove_book_files(storage_key, cover)
 
     return redirect(url_for('index'))
+
+
+# ─────────────────────────────────────────
+# OFFLINE (PWA)
+# The web app manifest, the service worker and the offline page are
+# public and hold no user data. Everything a download needs is behind
+# login and the owner check, and is never cached by the service worker
+# (it only keeps what the page itself saved).
+# ─────────────────────────────────────────
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Precached by the service worker (cache first)
+SHELL_FILES = ["css/style.css", "js/htmx.min.js", "js/sheets.js", "js/offline.js",
+               "js/player.js", "js/app.js", "icons/icon-192.png", "icons/icon-512.png",
+               "icons/maskable-512.png", "icons/apple-touch-icon.png"]
+SHELL_URLS  = ["/offline", "/manifest.webmanifest"] + [f"/static/{f}" for f in SHELL_FILES]
+FONT_CSS    = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+
+
+def _shell_version() -> str:
+    """Changes whenever the worker, a shell file or a template changes, so
+    the browser installs the new worker and drops the old caches."""
+    h = hashlib.sha256()
+    paths = [os.path.join(APP_DIR, "sw.js")] + [os.path.join(app.static_folder, f) for f in SHELL_FILES]
+    tpl = os.path.join(APP_DIR, "templates")
+    paths += sorted(os.path.join(tpl, f) for f in os.listdir(tpl))
+    for path in paths:
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()[:12]
+
+
+SHELL_VERSION = _shell_version()
+
+
+@app.route('/manifest.webmanifest')
+def web_manifest():
+    icons = "/static/icons/"
+    response = make_response(json.dumps({
+        "name"            : "WAudible",
+        "short_name"      : "WAudible",
+        "description"     : "Your PDF books, read aloud.",
+        "id"              : "/",
+        "start_url"       : "/",
+        "scope"           : "/",
+        "display"         : "standalone",
+        "background_color": "#121212",
+        "theme_color"     : "#E95420",
+        "icons": [
+            {"src": icons + "icon-192.png",     "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": icons + "icon-512.png",     "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": icons + "maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }))
+    response.mimetype = "application/manifest+json"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route('/sw.js')
+def service_worker():
+    with open(os.path.join(APP_DIR, "sw.js"), encoding="utf-8") as f:
+        source = f.read()
+    source = (source.replace("__VERSION__", SHELL_VERSION)
+                    .replace("__SHELL_URLS__", json.dumps(SHELL_URLS))
+                    .replace("__FONT_CSS__", json.dumps(FONT_CSS)))
+    response = make_response(source)
+    response.mimetype = "text/javascript"
+    # Checked on every visit, so a new version applies straight away
+    response.headers["Cache-Control"] = "no-cache"
+    # The worker's own policy: same origin, plus the Google Fonts files
+    # the pages already use (cached so the app looks the same offline)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com")
+    return response
+
+
+@app.route('/offline')
+def offline_page():
+    """The app shell with no user data and no CSRF token: the service
+    worker precaches it and shows it when the network is gone. The list
+    of downloaded books is drawn in the browser from IndexedDB."""
+    response = make_response(render_template('offline.html', layout='base.html', offline_shell=True))
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+def _no_store(response):
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route('/downloads')
+def downloads():
+    """Downloaded books on this device (drawn in the browser)."""
+    return render_page('downloads.html', view='downloads')
+
+
+@app.route('/offline/books')
+def offline_books():
+    """The user's book ids, so the browser can drop copies of deleted books."""
+    ids = [b.id for b in Book.query.with_entities(Book.id).filter_by(user_id=current_user.id)]
+    return _no_store(jsonify({"user": current_user.id, "books": ids}))
+
+
+@app.route('/offline/csrf')
+def offline_csrf():
+    """A fresh token for sending progress saved while offline."""
+    return _no_store(jsonify({"token": generate_csrf()}))
+
+
+def _artwork_files(book: Book) -> list[dict]:
+    """The cover the player shows and the three lock-screen sizes."""
+    files = []
+    has_cover = bool(book.cover) and os.path.exists(cover_path(book.cover))
+    if has_cover:
+        files.append({"url": f"/cover/{book.id}", "bytes": os.path.getsize(cover_path(book.cover)),
+                      "kind": "cover"})
+    for size in ARTWORK_SIZES:
+        try:
+            png = cover_artwork(cover_path(book.cover), size) if has_cover else None
+        except Exception:
+            png = None
+        png = png or fallback_artwork(book.title, size)
+        files.append({"url": f"/cover/{book.id}?size={size}", "bytes": len(png), "kind": "artwork"})
+    return files
+
+
+def _audio_files(book: Book, voice: str) -> list[dict]:
+    files = []
+    for page in range(book.pages):
+        path = get_audio_path(book.storage_key, page, voice)
+        # Missing for this voice: made on demand when downloaded
+        files.append({"url": f"/audio/{book.id}/{page}?voice={voice}",
+                      "bytes": os.path.getsize(path) if path else None, "page": page, "kind": "audio"})
+    return files
+
+
+def _offline_voice(book: Book) -> str:
+    voice = book.progress.voice if book.progress else "af_heart"
+    return voice if voice in VOICES else "af_heart"
+
+
+TEXT_BYTES_GUESS = 2000     # per page, for the estimate only
+
+
+@app.route('/offline/size/<int:book_id>')
+def offline_size(book_id):
+    """Quick estimate for the confirm step and the download suggestion
+    (audio sizes are exact, covers and text are guessed)."""
+    book  = _get_book(book_id)
+    voice = _offline_voice(book)
+    audio = _audio_files(book, voice)
+    known = [f["bytes"] for f in audio if f["bytes"] is not None]
+    average = sum(known) / len(known) if known else 240_000
+    total = sum(known) + average * (len(audio) - len(known)) + book.pages * TEXT_BYTES_GUESS + 150_000
+    if book.cover and os.path.exists(cover_path(book.cover)):
+        total += os.path.getsize(cover_path(book.cover))
+    return _no_store(jsonify({"bytes": int(total), "voice": voice, "pages": book.pages,
+                              "ready": book.status == "ready"}))
+
+
+@app.route('/offline/manifest/<int:book_id>')
+def offline_manifest(book_id):
+    """Everything needed to play one finished book with no network: details,
+    contents, page text, and the URL and size of every file, for the
+    voice the user listens with."""
+    book = _get_book(book_id)
+    if book.status != "ready":
+        return _no_store(jsonify({"error": "This book is still being prepared."})), 409
+    voice = _offline_voice(book)
+    progress = book.progress
+    texts = extract_pages(pdf_path(book.storage_key))
+    files = _artwork_files(book) + _audio_files(book, voice)
+    return _no_store(jsonify({
+        "id"    : book.id,
+        "title" : book.title,
+        "author": book.author or "",
+        "genre" : book.genre,
+        "pages" : book.pages,
+        "voice" : voice,
+        "cover" : f"/cover/{book.id}" if book.cover else f"/cover/{book.id}?size=512",
+        "toc"   : extract_toc(pdf_path(book.storage_key)),
+        "texts" : texts,
+        "files" : files,
+        # Where the listener is now, the starting point on this device
+        "progress": {"page": progress.current_page, "speed": progress.speed,
+                     "at": _ms(progress.updated_at) if progress.updated_at else 0} if progress else None,
+        "bytes" : sum(f["bytes"] or 0 for f in files) + sum(len(t.encode()) for t in texts),
+    }))
 
 
 if __name__ == '__main__':

@@ -35,7 +35,9 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/models.py`: Flask-SQLAlchemy models (`User`, `Book`, `Progress`) and the shared `db` object
 - `init_db.py`: creates the `users`, `books` and `progress` tables (`python init_db.py`, safe to rerun)
 - `app/templates/base.html`: page shell (player, mini player, sheets, nav); `fragment.html` is the content-only layout for htmx swaps; `_player.html`, `_cards.html`, `_icons.html` are partials
-- `app/static/js/player.js` (persistent player, set up once), `app.js` (page scripts after each swap), `sheets.js` (bottom sheets), `htmx.min.js` (htmx 2.0.11, self-hosted)
+- `app/static/js/player.js` (persistent player, set up once), `app.js` (page scripts after each swap), `sheets.js` (bottom sheets), `offline.js` (downloads, IndexedDB, progress sync, Downloads and offline page), `signed-out.js` (login pages tell the service worker nobody is signed in), `htmx.min.js` (htmx 2.0.11, self-hosted)
+- `app/sw.js`: the service worker, served at `/sw.js` with a version the app fills in; never caches pages or JSON, serves downloaded media per user with Range support
+- `app/static/icons/`: PWA icons made from `assets/waudible.png`; `app/templates/offline.html`, `downloads.html`, `_offline_sheets.html`: offline page, Downloads screen and the download, suggestion and logout sheets
 - `app/static/css/style.css`: UI
 - `migrate.py`, `migrations/`: old table creation for `book_sessions`, no longer used, kept until deletion is confirmed
 - `data/books`, `data/covers`, `data/audio`: uploaded files and generated audio (gitignored)

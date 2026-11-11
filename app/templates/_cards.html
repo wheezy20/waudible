@@ -16,6 +16,8 @@
         <span class="cover-processing" style="--p: {{ ((book.processed / book.pages) * 100) | round }}%"
               aria-label="Preparing audio, {{ book.processed }} of {{ book.pages }} pages"></span>
         {% endif %}
+        {# Downloaded to this device, or downloading (offline.js) #}
+        <span class="cover-offline" aria-hidden="true">{{ icon("downloaded", 22) }}</span>
     </a>
     <div class="card-progress" role="progressbar" aria-label="Page {{ book.current_page + 1 }} of {{ book.pages }}"
          aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ book.percent }}">
@@ -24,7 +26,7 @@
     <div class="card-meta">
         <p class="card-title">{{ book.title }}</p>
         <button type="button" class="icon-btn card-more" data-book-id="{{ book.id }}"
-                data-title="{{ book.title }}" aria-label="More options for {{ book.title }}"
+                data-title="{{ book.title }}" data-ready="{{ 0 if book.running else 1 }}" aria-label="More options for {{ book.title }}"
                 aria-haspopup="dialog" aria-controls="book-sheet">{{ icon("more", 20) }}</button>
     </div>
 </article>

@@ -26,8 +26,9 @@ Never edit `.env` to run the tests.
 | nav | `browser/nav_check.js` | Audio keeps playing across navigation, mini player, switching and deleting books, upload, session end, logout |
 | back | `browser/back_check.js` | Back closes the open sheet, then the player, before leaving the page |
 | media | `browser/media_check.js` | Lock-screen details and buttons, speed, preloading the next page, page changes, sleep timer |
+| offline | `browser/offline_check.js` | Manifest and service worker, downloading a book, playing it offline (page change, seeking with Range requests, contents, lock screen), progress sync, the download suggestion, accounts kept apart, delete and logout cleanup |
 
-The browser suites run headless Chrome through `browser/server.py`, which seeds a test user and three books and serves the app on a free local port. The gunicorn checks in `prod` need the real Kokoro model files in the repo root and are skipped without them; your running service on port 8000 is not touched.
+The browser suites run headless Chrome through `browser/server.py`, which seeds a test user and three books (the offline suite also gets three more books and a second user) and serves the app on a free local port. The offline suite saves screenshots at 360x640 and 390x844 of the download suggestion, the Downloads screen and the offline page into `SHOT_DIR` (default: the temporary data folder, which is deleted afterwards). The gunicorn checks in `prod` need the real Kokoro model files in the repo root and are skipped without them; your running service on port 8000 is not touched.
 
 ## One-time setup
 

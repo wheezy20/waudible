@@ -90,6 +90,51 @@ try:
         r = a.post("/save_progress", json={"book_id": book_id, "page": 1, **bad}, headers={"X-CSRFToken": meta_token(a)})
         T.check(f"an unknown {list(bad)[0]} is rejected and nothing changes", r.status_code == 400
                 and a.get(f"/player/{book_id}").get_json()["page"] == 2, r.status_code)
+    # Positions saved offline arrive later with their time ("at"): last write wins
+    import time as _time
+    t0 = a.get(f"/player/{book_id}").get_json()["updated"]
+    T.check("/player/<id> says when progress was saved", isinstance(t0, int) and t0 > 0, t0)
+    r = a.post("/save_progress", json={"book_id": book_id, "page": 0, "speed": 1.0, "voice": "bf_emma",
+               "at": int(_time.time() * 1000) - 3600_000}, headers={"X-CSRFToken": meta_token(a)})
+    T.check("an older offline position is ignored", r.get_json() == {"status": "stale"}
+            and a.get(f"/player/{book_id}").get_json()["page"] == 2, r.get_json())
+    r = a.post("/save_progress", json={"book_id": book_id, "page": 1, "speed": 1.25, "voice": "bf_emma",
+               "at": int(_time.time() * 1000) + 3600_000}, headers={"X-CSRFToken": meta_token(a)})
+    j = a.get(f"/player/{book_id}").get_json()
+    T.check("a newer one is saved, with its time capped at now", r.get_json() == {"status": "saved"} and j["page"] == 1
+            and j["updated"] <= int(_time.time() * 1000) + 1000, j)
+    r = a.post("/save_progress", json={"book_id": book_id, "page": 1, "at": "soon"}, headers={"X-CSRFToken": meta_token(a)})
+    T.check("a bad time is rejected", r.status_code == 400, r.status_code)
+    a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25, "voice": "bf_emma"},
+           headers={"X-CSRFToken": meta_token(a)})
+
+    T.section("Offline downloads (server side)")
+    m = a.get(f"/offline/manifest/{book_id}")
+    mj = m.get_json()
+    T.check("manifest: details, text per page, cover and audio for the current voice", m.status_code == 200
+            and mj["pages"] == 3 and len(mj["texts"]) == 3 and mj["voice"] == "bf_emma"
+            and [f["url"] for f in mj["files"] if f["kind"] == "audio"] == [f"/audio/{book_id}/{i}?voice=bf_emma" for i in range(3)]
+            and mj["files"][0]["url"] == f"/cover/{book_id}", {k: mj[k] for k in ("pages", "voice")} if mj else m.status_code)
+    T.check("manifest and size are never cached", m.headers.get("Cache-Control") == "no-store"
+            and a.get(f"/offline/size/{book_id}").headers.get("Cache-Control") == "no-store")
+    busy_id, _ = helpers.add_book(a_id, "Busy", 2, status="processing")
+    T.check("a book still processing can't be downloaded yet (409)", a.get(f"/offline/manifest/{busy_id}").status_code == 409
+            and a.get(f"/offline/size/{busy_id}").get_json()["ready"] is False)
+    ob = a.get("/offline/books").get_json()
+    T.check("/offline/books lists the user's book ids", ob["user"] == a_id and book_id in ob["books"] and busy_id in ob["books"], ob)
+    T.check("/offline/csrf gives a token that works", a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25,
+            "voice": "bf_emma"}, headers={"X-CSRFToken": a.get("/offline/csrf").get_json()["token"]}).status_code == 200)
+    sw = anon.get("/sw.js")
+    T.check("/sw.js is public, no-cache, versioned", sw.status_code == 200 and sw.headers["Cache-Control"] == "no-cache"
+            and "__VERSION__" not in sw.get_data(as_text=True) and "waudible-shell-" in sw.get_data(as_text=True))
+    mf = anon.get("/manifest.webmanifest")
+    T.check("the web app manifest is public", mf.status_code == 200 and mf.mimetype == "application/manifest+json"
+            and mf.get_json()["display"] == "standalone")
+    off = anon.get("/offline")
+    T.check("/offline is public and holds no token or user details", off.status_code == 200
+            and "csrf" not in off.get_data(as_text=True) and "waudible-user" not in off.get_data(as_text=True))
+    T.check("/downloads renders for the user", a.get("/downloads").status_code == 200)
+
     home = a.get("/").get_data(as_text=True)
     T.check("Home shows the book on its shelf and in Continue listening", "Fiction" in home and "Continue listening" in home
             and f'data-open-book="{book_id}"' in home)
@@ -113,7 +158,8 @@ try:
     login(b, "books_b", PW)
     t = meta_token(b)
     gets = [f"/read/{book_id}", f"/player/{book_id}", f"/audio/{book_id}/0", f"/cover/{book_id}", f"/cover/{book_id}?size=96",
-            f"/toc/{book_id}", f"/status/{book_id}", f"/readiness/{book_id}", f"/page_text/{book_id}/0"]
+            f"/toc/{book_id}", f"/status/{book_id}", f"/readiness/{book_id}", f"/page_text/{book_id}/0",
+            f"/offline/manifest/{book_id}", f"/offline/size/{book_id}"]
     for u in gets:
         code = b.get(u).status_code
         T.check(f"B GET {u} -> 404", code == 404, code)
@@ -127,7 +173,7 @@ try:
     T.check("B's pages don't list A's books", f'data-open-book="{book_id}"' not in home_b and "No books yet" in home_b)
 
     T.section("Logged out")
-    for u in ["/", "/library", *gets]:
+    for u in ["/", "/library", "/downloads", "/offline/books", "/offline/csrf", *gets]:
         r = anon.get(u)
         T.check(f"GET {u} -> login", r.status_code == 302 and r.location.startswith("/login?next="), f"{r.status_code} {r.location}")
     for u, kw in ((f"/delete/{book_id}", {}), ("/save_progress", {"json": {"book_id": book_id, "page": 0}}), ("/upload", {})):

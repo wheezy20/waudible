@@ -1,5 +1,6 @@
 {% extends layout %}
 {% from "_cards.html" import book_card, shelves_section, empty_state %}
+{% from "_icons.html" import icon %}
 
 {% block title %}{{ "Library" if view == "library" else "Home" }} | WAudible{% endblock %}
 
@@ -19,6 +20,17 @@
     {% endwith %}
 
     <div class="home-main">
+    {% if view == "library" %}
+        {# Filled in by offline.js: how many books are on this device #}
+        <a href="/downloads" class="downloads-link" id="downloads-link">
+            <span class="downloads-link-icon">{{ icon("download", 22) }}</span>
+            <span class="downloads-link-text">
+                <span class="downloads-link-title">Downloads</span>
+                <span class="downloads-link-sub" id="downloads-link-sub">Listen without a connection</span>
+            </span>
+            <span class="downloads-link-arrow">{{ icon("jump", 20) }}</span>
+        </a>
+    {% endif %}
     {% if shelves %}
 
         {% if view == "home" and continue_listening %}

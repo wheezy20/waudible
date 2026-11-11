@@ -7,7 +7,7 @@ set -u
 cd "$(dirname "${BASH_SOURCE[0]}")"
 PY=venv/bin/python
 
-ALL=(auth books worker reqlog prod nav back media)
+ALL=(auth books worker reqlog prod nav back media offline)
 SUITES=("${@:-${ALL[@]}}")
 
 # Refuse straight away if this would touch production (the guard in tests/helpers.py)
@@ -32,14 +32,14 @@ trap 'exit 130' INT TERM
 command_for() {
     case "$1" in
         auth|books|worker|reqlog|prod) echo "$PY tests/test_$1.py" ;;
-        nav|back|media)                echo "$PY tests/browser/server.py $1_check.js" ;;
+        nav|back|media|offline)                echo "$PY tests/browser/server.py $1_check.js" ;;
         *) return 1 ;;
     esac
 }
 timeout_for() {
     if [ -n "${TEST_TIMEOUT:-}" ]; then echo "$TEST_TIMEOUT"; return; fi
     case "$1" in
-        nav|back|media) echo 900 ;;
+        nav|back|media|offline) echo 900 ;;
         prod)           echo 600 ;;
         *)              echo 400 ;;
     esac
@@ -49,7 +49,7 @@ declare -A RESULT
 start_all=$(date +%s)
 for suite in "${SUITES[@]}"; do
     cmd=$(command_for "$suite") || { RESULT[$suite]="UNKNOWN SUITE"; continue; }
-    case "$suite" in nav|back|media)
+    case "$suite" in nav|back|media|offline)
         if [ ! -d tests/browser/node_modules/puppeteer-core ]; then
             RESULT[$suite]="SKIPPED (run: npm install --prefix tests/browser)"; continue
         fi

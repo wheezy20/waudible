@@ -1,0 +1,72 @@
+{# Sheets for offline listening (offline.js). No user data is rendered
+   here: offline.js fills them in. #}
+{% from "_icons.html" import icon %}
+
+<!-- ── DOWNLOAD A BOOK: confirm with the size, then progress ── -->
+<div class="sheet sheet-over-player" id="download-sheet" role="dialog" aria-modal="true" aria-labelledby="dl-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title clamp-2" id="dl-title">Download for offline</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <p class="dl-book" id="dl-book"></p>
+
+    <div class="dl-state" id="dl-confirm" hidden>
+        <p class="confirm-text">About <strong id="dl-size">...</strong> on this device.</p>
+        <p class="dl-note" id="dl-voice-note"></p>
+        <p class="field-error" id="dl-error" role="alert"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Cancel</button>
+            <button type="button" class="btn btn-primary btn-pill" id="dl-start">Download</button>
+        </div>
+    </div>
+
+    <div class="dl-state" id="dl-progress" hidden>
+        <div class="dl-progress-row">
+            <span class="dl-ring" id="dl-ring" style="--p: 0%"><span id="dl-pct">0%</span></span>
+            <p class="confirm-text" id="dl-progress-text">Starting...</p>
+        </div>
+        <p class="dl-note">You can close this and keep listening. The download carries on while WAudible is open.</p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Hide</button>
+            <button type="button" class="btn btn-danger-solid btn-pill" id="dl-cancel">Cancel download</button>
+        </div>
+    </div>
+
+    <div class="dl-state" id="dl-done" hidden>
+        <p class="confirm-text" id="dl-done-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Close</button>
+            <button type="button" class="btn btn-danger-solid btn-pill" id="dl-remove">Remove download</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── SUGGESTION: download instead of streaming ── -->
+<div class="sheet sheet-over-player" id="ask-sheet" role="dialog" aria-modal="true" aria-labelledby="ask-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="ask-title">Download for offline listening?</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <p class="confirm-text">About <strong id="ask-size"></strong>. Streaming uses data and stops when your connection drops.</p>
+    <div class="ask-actions">
+        <button type="button" class="btn btn-primary btn-pill btn-block" id="ask-download" data-autofocus>{{ icon("download", 20) }} Download</button>
+        <button type="button" class="btn btn-ghost btn-pill btn-block" id="ask-later">Not now</button>
+        <button type="button" class="btn-text" id="ask-never">Don't ask again for this book</button>
+    </div>
+</div>
+
+<!-- ── LOG OUT: downloads are removed from this device ── -->
+<div class="sheet" id="logout-sheet" role="dialog" aria-modal="true" aria-labelledby="logout-title" aria-hidden="true">
+    <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
+    <div class="sheet-head">
+        <h2 class="sheet-title" id="logout-title">Log out?</h2>
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
+    </div>
+    <p class="confirm-text" id="logout-text"></p>
+    <div class="confirm-actions">
+        <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Cancel</button>
+        <button type="button" class="btn btn-danger-solid btn-pill" id="logout-confirm">Log out</button>
+    </div>
+</div>
