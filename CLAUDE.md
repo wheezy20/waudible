@@ -1,11 +1,18 @@
 # WAudible
 
-WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX text-to-speech. It started as a single-user app on localhost and is being turned into a multi-user hosted app. See PLAN.md for the roadmap, ARCHITECTURE.md for the target design, and JOURNAL.md for the history so far.
+WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX text-to-speech. It started as a single-user app on localhost and is now a multi-user hosted app. See PLAN.md for the roadmap, ARCHITECTURE.md for the target design, and JOURNAL.md for the history so far.
 
-## Branches
+## Branches and workflow
 
-- `online-version`: all work on the hosted, multi-user version happens here.
-- `main`: the original local app. Never commit to, merge into, or rebase `main`.
+- `main` is the hosted, multi-user version, and it is what the live service runs (the checkout in this folder is what `waudible.service` serves).
+- Never commit to `main` directly, and never merge into, rebase or force push it. Changes reach `main` only through a pull request that the user merges on GitHub.
+- For every new task, start from an up to date `main` and create a branch with a short name: `git checkout main && git pull --ff-only && git checkout -b <short-name>`.
+- At the end of the task:
+  1. push the branch (`git push -u origin <short-name>`);
+  2. give the user the compare link for the pull request: `https://github.com/wheezy20/waudible/compare/main...<short-name>`;
+  3. switch the checkout back to `main` (`git checkout main`).
+- Do not restart, stop or reload the service at any point (no `systemctl restart waudible`); the user decides when the merged change goes live.
+- `online-version` is the old working branch, now merged into `main` and no longer used.
 
 ## Stack
 
@@ -84,6 +91,6 @@ Startup takes a few seconds because the Kokoro model loads at import time.
 - Never print, echo, log or commit anything from `.env` (connection strings, passwords, secret keys). When a value must be checked, mask it.
 - No em dashes or en dashes anywhere: prose, docs, code comments, commit messages or UI text. Use commas or parentheses instead.
 - No `Co-Authored-By` or `Claude-Session` trailers in commit messages.
-- Tests that write to the database run on a temporary Neon branch, never production: export the branch's `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for the test process only, never edit `.env`. Run them with `./run_tests.sh` (the guard in `tests/helpers.py` refuses production).
+- Run the tests with `./run_tests.sh` (see `tests/README.md`). Before running them, remind the user that a temporary Neon branch is needed, and create a new one (`neon branches create ... --schema-only --expires-at ...`), since older ones expire. Tests that write to the database run on that branch, never production: export the branch's `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for the test process only, never edit `.env`. The guard in `tests/helpers.py` refuses production.
 - Debug stays off in production. Don't add `WAUDIBLE_DEBUG` or `WAUDIBLE_SECURE_COOKIES=0` to the service.
 - Keep `PLAN.md` checkboxes current and add a dated entry at the top of `JOURNAL.md` when something significant happens.
