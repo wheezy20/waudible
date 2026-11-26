@@ -20,7 +20,7 @@ It started as a single-user app on localhost and is now a small multi-user web a
 - **Persistent mini player.** Audio keeps playing while you move between Home and Library. The player collapses to a mini player above the bottom bar and expands again with a tap; the Back button closes the player or any open sheet first.
 - **Genre shelves.** Books sit on shelves (Self Help, Academic, Christian, or your own), with filter chips, cover art (yours or generated initials) and a Continue listening row.
 - **Contents drawer.** Jump to any chapter from the PDF's table of contents, with dots showing which pages are ready.
-- **Player controls.** Speed from 0.75x to 2x (changed in the browser, so no new audio is needed), six voices, 15 second skips, jump to page, sleep timer, and the page text.
+- **Player controls.** Speed from 0.75x to 2x (changed in the browser, so no new audio is needed), six voices (Esinam, Enyonam, Enam, Elikem, Elorm and Eyram), 15 second skips, jump to page, sleep timer, and the page text.
 - **Offline listening.** Install WAudible to your home screen and download a finished book, or just some of its chapters or pages, to the phone. It then plays with no connection, from the lock screen too, with seeking, chapters, speed and the sleep timer. The app suggests downloading a ready book instead of streaming it. Library, Downloads lists what is on the device and how much space it uses. Progress made offline is sent to the server when you're back online.
 - **Picks up where you left off**, on any device.
 - **Works on phones, tablets and desktop.**

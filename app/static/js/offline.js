@@ -21,6 +21,16 @@
     const toast = msg => window.App && App.toast(msg);
     const cacheName = u => `waudible-media-u${u}`;
 
+    // Voice names for display (the mapping comes from tts_engine.VOICE_LABELS
+    // through the player's data-voices); ids are what gets stored
+    const VOICE_LABELS = (() => {
+        try { return JSON.parse(document.getElementById('player-sheet').dataset.voices); } catch (e) { return {}; }
+    })();
+    window.Voices = {
+        name: id => (VOICE_LABELS[id] ? VOICE_LABELS[id].name : id),
+        description: id => (VOICE_LABELS[id] ? VOICE_LABELS[id].description : ''),
+    };
+
     function size(bytes) {
         const mb = bytes / 1e6;
         return (mb < 10 ? mb.toFixed(1) : Math.round(mb).toString()) + ' MB';
@@ -720,7 +730,7 @@
             }
         }
         $('dl-voice-note').textContent =
-            `Only the voice you listen with (${p.voice}) is downloaded. Other voices need a connection.`;
+            `Only the voice you listen with (${Voices.name(p.voice)}) is downloaded. Other voices need a connection.`;
         $('dl-all-note').textContent = `All ${plural(p.pages, 'page', 'pages')} of the book.`;
         renderModes();
         renderChapterList(p, rec);
@@ -833,7 +843,7 @@
         const bytes = size(storedBytes(rec));
         const pages = rec.have.length === rec.pages ? `Whole book, ${bytes}` : `${rec.have.length} of ${rec.pages} pages, ${bytes}`;
         if (rec.pending.length) return `${pages}. ${isOnline() ? 'More coming' : 'More comes when you are back online'}.`;
-        return `${pages}, voice ${rec.voice}`;
+        return `${pages}, voice ${Voices.name(rec.voice)}`;
     }
 
     function chapterRows(rec, offlineView) {

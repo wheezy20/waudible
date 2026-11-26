@@ -114,7 +114,7 @@ data/covers/<storage_key>.<ext>          (jpg, png or webp)
 data/audio/<storage_key>/page<N>_v<voice>.mp3
 ```
 
-The voice is part of audio paths, so the app only accepts the known voices.
+The voice is part of audio paths, so the app only accepts the known voices. Voices are stored and sent by their Kokoro id (`af_heart`, `af_nova`, `bf_emma`, `am_adam`, `am_echo`, `bm_george`) in the database, audio file names, URLs, cache keys and offline downloads. Listeners only see the display names and descriptions from `VOICE_LABELS` in `app/tts_engine.py` (Esinam, Enyonam, Enam, Elikem, Elorm, Eyram), which templates get through the context processor and page scripts through the player's `data-voices` (`Voices.name(id)` in `offline.js`). The default is `af_heart`, shown as Esinam.
 
 ## Audio format and speed
 

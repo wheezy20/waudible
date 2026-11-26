@@ -1618,6 +1618,29 @@ body.is-offline [data-sheet-open="add-sheet"] { opacity: 0.45; }
 .toc-item.toc-unavailable .toc-pg { color: var(--text-3); }
 .toc-item.toc-unavailable .toc-label::after { content: ' (not downloaded)'; font-size: 12px; }
 
+/* Voice picker (More sheet): names with a short description */
+.voice-picker { border: none; padding: 0; margin: 0 0 18px; min-inline-size: 0; }
+.voice-picker legend { padding: 0; margin-bottom: 8px; }
+.voice-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.voice-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 56px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    background: var(--surface-3);
+    border: 2px solid transparent;
+    cursor: pointer;
+}
+.voice-option input { margin: 3px 0 0; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--orange); }
+.voice-option:has(input:checked) { border-color: var(--orange); background: var(--orange-dim); }
+.voice-option:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 2px; }
+.voice-picker:disabled .voice-option { opacity: 0.5; cursor: default; }
+.voice-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.voice-name { font-size: 15px; font-weight: 700; }
+.voice-desc { font-size: 12px; color: var(--text-2); line-height: 1.3; }
+
 /* Suggestion sheet */
 .ask-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 .ask-actions .btn { min-height: 50px; }

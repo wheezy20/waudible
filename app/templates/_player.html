@@ -20,7 +20,8 @@
 
 <!-- ── FULL PLAYER (sheet over the current page) ── -->
 <section class="player-sheet" id="player-sheet" role="dialog" aria-modal="true" aria-label="Now playing" aria-hidden="true"
-         data-speeds="{{ speeds | tojson | forceescape }}">
+         data-speeds="{{ speeds | tojson | forceescape }}"
+         data-voices="{{ voice_labels | tojson | forceescape }}">
     <div class="player-glow" id="player-glow" aria-hidden="true"></div>
 
     <div class="reader-layout">
@@ -116,15 +117,22 @@
         <h2 class="sheet-title" id="more-title">More</h2>
         <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
     </div>
-    <div class="form-group">
-        <label class="form-label" for="voice">Voice</label>
-        <select id="voice" class="field" aria-describedby="voice-note">
+    {# Values are the voice ids; listeners see the names (tts_engine.VOICE_LABELS) #}
+    <fieldset class="form-group voice-picker" id="voice" aria-describedby="voice-note">
+        <legend class="form-label">Voice</legend>
+        <div class="voice-options">
             {% for v in voices %}
-            <option value="{{ v }}">{{ v }}</option>
+            <label class="voice-option">
+                <input type="radio" name="voice" value="{{ v }}" {% if loop.first %}checked{% endif %}>
+                <span class="voice-text">
+                    <span class="voice-name">{{ voice_labels[v].name }}</span>
+                    <span class="voice-desc">{{ voice_labels[v].description }}</span>
+                </span>
+            </label>
             {% endfor %}
-        </select>
+        </div>
         <p class="field-note" id="voice-note" hidden></p>
-    </div>
+    </fieldset>
     <div class="form-group">
         <label class="form-label" for="jump-input">Jump to page (1 to <span id="jump-max">1</span>)</label>
         <div class="jump-row">

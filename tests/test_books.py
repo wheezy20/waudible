@@ -86,6 +86,24 @@ try:
             (j["page"], j["speed"], j["voice"], j["pages"], j["running"], j["cover"]) == (2, 1.25, "bf_emma", 3, False, f"/cover/{book_id}"), j)
     r = a.post("/save_progress", json={"book_id": book_id, "page": 3}, headers={"X-CSRFToken": meta_token(a)})
     T.check("a page past the end is not saved", r.status_code == 400, r.status_code)
+    # Voices: display names only; the six old ids stay valid everywhere
+    from app.tts_engine import VOICES, VOICE_LABELS
+    ids = ["af_heart", "af_nova", "bf_emma", "am_adam", "am_echo", "bm_george"]
+    T.check("the six voice ids are unchanged, with a name and description for each",
+            sorted(VOICES) == sorted(ids) and [VOICE_LABELS[i][0] for i in ids] == ["Esinam", "Enyonam", "Enam", "Elikem", "Elorm", "Eyram"]
+            and all(VOICE_LABELS[i][1] for i in ids), VOICE_LABELS)
+    resolved = []
+    for vid in ids:
+        a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25, "voice": vid}, headers={"X-CSRFToken": meta_token(a)})
+        resolved.append(a.get(f"/player/{book_id}").get_json()["voice"])
+    T.check("every old saved id still saves and comes back as the same id", resolved == ids, resolved)
+    shell = a.get("/").get_data(as_text=True)
+    T.check("the page shows the names and descriptions, with the ids only as values", all(
+        f'value="{i}"' in shell and f'<span class="voice-name">{VOICE_LABELS[i][0]}</span>' in shell
+        and f'<span class="voice-desc">{VOICE_LABELS[i][1]}</span>' in shell for i in ids))
+    T.check("the default (af_heart) is the first choice, Esinam", shell.index('value="af_heart"') < shell.index('value="af_nova"')
+            and 'value="af_heart" checked' in shell)
+    a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25, "voice": "bf_emma"}, headers={"X-CSRFToken": meta_token(a)})
     for bad in ({"speed": 9}, {"voice": "../nope"}):
         r = a.post("/save_progress", json={"book_id": book_id, "page": 1, **bad}, headers={"X-CSRFToken": meta_token(a)})
         T.check(f"an unknown {list(bad)[0]} is rejected and nothing changes", r.status_code == 400
