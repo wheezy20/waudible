@@ -663,6 +663,19 @@ def _shell_version() -> str:
 SHELL_VERSION = _shell_version()
 
 
+def _always_fresh(response):
+    """For the service worker, the manifest and the offline page: the
+    browser must check with the server every time, so a new version
+    applies straight away. Cloudflare caches .js files at the edge by
+    default and then replaces Cache-Control with its own Browser Cache
+    TTL (4 hours), so it is also told not to keep a copy, which makes it
+    pass this header through unchanged."""
+    response.headers["Cache-Control"] = "no-cache, max-age=0"
+    response.headers["CDN-Cache-Control"] = "no-store"
+    response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+    return response
+
+
 @app.route('/manifest.webmanifest')
 def web_manifest():
     icons = "/static/icons/"
@@ -683,8 +696,7 @@ def web_manifest():
         ],
     }))
     response.mimetype = "application/manifest+json"
-    response.headers["Cache-Control"] = "no-cache"
-    return response
+    return _always_fresh(response)
 
 
 @app.route('/sw.js')
@@ -697,7 +709,7 @@ def service_worker():
     response = make_response(source)
     response.mimetype = "text/javascript"
     # Checked on every visit, so a new version applies straight away
-    response.headers["Cache-Control"] = "no-cache"
+    _always_fresh(response)
     # The worker's own policy: same origin, plus the Google Fonts files
     # the pages already use (cached so the app looks the same offline)
     response.headers["Content-Security-Policy"] = (
@@ -711,8 +723,7 @@ def offline_page():
     worker precaches it and shows it when the network is gone. The list
     of downloaded books is drawn in the browser from IndexedDB."""
     response = make_response(render_template('offline.html', layout='base.html', offline_shell=True))
-    response.headers["Cache-Control"] = "no-cache"
-    return response
+    return _always_fresh(response)
 
 
 def _no_store(response):

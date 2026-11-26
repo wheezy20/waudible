@@ -136,7 +136,17 @@ run(async browser => {
   });
   check('service worker registered at /sw.js for the whole site, and controls the page',
         sw.scope === '/' && sw.script === '/sw.js', `${sw.script} scope ${sw.scope}`);
-  check('/sw.js is served with Cache-Control: no-cache', sw.cc === 'no-cache' && sw.type.startsWith('text/javascript'), `${sw.cc} ${sw.type}`);
+  check('/sw.js is JavaScript', sw.type.startsWith('text/javascript'), sw.type);
+  // Exactly these headers, so browsers fetch a new worker straight away and
+  // Cloudflare keeps no copy (an edge copy gets its 4 hour Browser Cache TTL)
+  const fresh = await page.evaluate(async () => Promise.all(['/sw.js', '/manifest.webmanifest', '/offline'].map(async u => {
+    const r = await fetch(u, { cache: 'no-store' });
+    return [u, r.headers.get('cache-control'), r.headers.get('cdn-cache-control'), r.headers.get('cloudflare-cdn-cache-control')];
+  })));
+  for (const [u, cc, cdn, cf] of fresh) {
+    check(`${u}: Cache-Control "no-cache, max-age=0", and no-store for the CDN`,
+          cc === 'no-cache, max-age=0' && cdn === 'no-store' && cf === 'no-store', `${cc} | ${cdn} | ${cf}`);
+  }
   const csp = await page.evaluate(async () => (await fetch('/')).headers.get('content-security-policy'));
   check("CSP adds worker-src and manifest-src 'self' and keeps the rest",
         csp.includes("worker-src 'self'") && csp.includes("manifest-src 'self'") && csp.includes("script-src 'self' 'unsafe-inline'")
