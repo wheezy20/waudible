@@ -13,7 +13,19 @@
     const subEl     = $('player-sub');
     const statusEl  = $('player-status');
     const textBoxEl = $('text-box');
-    const voiceEl   = $('voice');
+    // The voice picker is a group of radio buttons (name and description
+    // for each); this keeps the rest of the player working with plain ids
+    const voiceBox  = $('voice');
+    const voiceEl   = {
+        get value() { const c = voiceBox.querySelector('input:checked'); return c ? c.value : 'af_heart'; },
+        set value(id) {
+            const r = [...voiceBox.querySelectorAll('input')].find(i => i.value === id);
+            if (r) r.checked = true;
+        },
+        get disabled() { return voiceBox.disabled; },
+        set disabled(off) { voiceBox.disabled = off; },
+        addEventListener: (...args) => voiceBox.addEventListener(...args),
+    };
     const tocList   = $('toc-list');
     const seekEl    = $('seek');
     const playBtn   = $('play-btn');
@@ -207,10 +219,10 @@
         voiceEl.disabled = off;
         let text = '';
         if (off) text = book && book.local
-            ? `Offline: playing the downloaded voice (${book.local.voice}). Other voices need a connection.`
+            ? `Offline: playing the downloaded voice (${Voices.name(book.local.voice)}). Other voices need a connection.`
             : 'Other voices need a connection.';
         else if (book && book.local && voiceEl.value !== book.local.voice)
-            text = `Downloaded with ${book.local.voice}. This voice streams over your connection.`;
+            text = `Downloaded with ${Voices.name(book.local.voice)}. This voice streams over your connection.`;
         note.textContent = text;
         note.hidden = !text;
     }

@@ -146,3 +146,10 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Offline player handles a partial book: skips missing pages, stops at the end of a downloaded run, explains missing chapters and pages
 - [x] Real file sizes everywhere (manifest with page text and artwork sizes; the old `/offline/size` estimate is gone)
 - [x] `/sw.js`, the manifest and `/offline` sent with `Cache-Control: no-cache, max-age=0` and kept out of Cloudflare's edge cache, so worker updates apply straight away
+
+## Voice names
+
+- [x] Display names for the six voices (Esinam, Enyonam, Enam, Elikem, Elorm, Eyram) with a short description, set in one place (`VOICE_LABELS` in `app/tts_engine.py`)
+- [x] Ids unchanged everywhere they are stored or sent (database, audio file names, URLs, cache keys, offline downloads), so existing audio, saved voices and downloads keep working
+- [x] Voice picker in the More sheet shows names and descriptions; download text, Downloads, the offline page and player notes use the names
+- [ ] Tone words for the descriptions after listening (only Esinam has one, "warm")

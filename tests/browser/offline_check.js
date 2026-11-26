@@ -254,7 +254,8 @@ run(async browser => {
   // Two chapters: the default (current chapter and the next two) is the whole book
   check('confirm step shows the book and its real size first', conf.book === 'Offline Story' && conf.bytes === routes.total
         && /^2 chapters, 4 pages, \d+(\.\d)? MB$/.test(conf.total), `${conf.book}: ${conf.total} (${conf.bytes} of ${routes.total})`);
-  check('it says only the current voice is downloaded', conf.note.includes('af_heart') && conf.note.includes('Other voices need a connection'), conf.note);
+  check('it says only the current voice is downloaded, by name', conf.note.includes('(Esinam)') && !conf.note.includes('af_heart')
+        && conf.note.includes('Other voices need a connection'), conf.note);
   await page.click('#dl-start');
   await page.waitForFunction(() => !document.getElementById('dl-progress').hidden || !document.getElementById('dl-have').hidden, { timeout: 5000 });
   check('progress shows with a ring and Cancel', await page.evaluate(() => !document.getElementById('dl-progress').hidden
@@ -324,7 +325,7 @@ run(async browser => {
     total: document.querySelector('.downloads-total').textContent, all: !!document.getElementById('downloads-delete-all'),
     del: document.querySelectorAll('.dl-delete').length,
     nav: document.querySelector('.bottom-nav .is-active').dataset.nav }));
-  check('lists the downloaded books with their size and voice', list.items.length === 2 && list.items.every(t => / \| Whole book, \d+(\.\d)? MB, voice af_heart$/.test(t)),
+  check('lists the downloaded books with their size and voice', list.items.length === 2 && list.items.every(t => / \| Whole book, \d+(\.\d)? MB, voice Esinam$/.test(t)),
         list.items.join(' / '));
   check('total space used, a delete button per book and Delete all', /^2 books, \d+(\.\d)? MB used on this device$/.test(list.total)
         && list.del === 2 && list.all, list.total);
@@ -401,7 +402,7 @@ run(async browser => {
   await goto('/downloads');
   await page.waitForSelector(`.dl-item[data-book-id="${B8}"]`);
   const meta8 = () => page.$eval(`.dl-item[data-book-id="${B8}"] .dl-meta`, el => el.textContent);
-  check('the book shows "6 of 10 pages"', /^6 of 10 pages, \d+(\.\d)? MB, voice af_heart$/.test(await meta8()), await meta8());
+  check('the book shows "6 of 10 pages"', /^6 of 10 pages, \d+(\.\d)? MB, voice Esinam$/.test(await meta8()), await meta8());
   await page.click(`#dl-toggle-${B8}`);
   await page.waitForSelector(`#dl-details-${B8} .dl-ch`);
   const marks = () => page.$$eval(`#dl-details-${B8} .dl-ch`, lis => lis.map(li =>

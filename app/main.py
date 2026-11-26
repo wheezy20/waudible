@@ -10,7 +10,7 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 from app.pdf_reader import extract_page, extract_pages, get_book_info, extract_toc
 from app.tts_engine import (text_to_audio, get_audio_path,
-                            delete_book_audio, VOICES, SPEEDS)
+                            delete_book_audio, VOICES, VOICE_LABELS, SPEEDS)
 from app.storage import (new_storage_key, pdf_path, cover_path,
                          remove_book_files)
 from app.artwork import ARTWORK_SIZES, cover_artwork, fallback_artwork
@@ -298,7 +298,10 @@ def render_page(template: str, **context):
 
 @app.context_processor
 def player_constants():
-    return {"voices": VOICES, "speeds": SPEEDS}
+    # Ids with the names and descriptions listeners see (the player's
+    # picker, and the same mapping for the page scripts)
+    return {"voices": VOICES, "speeds": SPEEDS,
+            "voice_labels": {v: {"name": n, "description": d} for v, (n, d) in VOICE_LABELS.items()}}
 
 
 def _library_context():

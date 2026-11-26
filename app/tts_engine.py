@@ -18,14 +18,22 @@ print("Loading Kokoro voice model...")
 kokoro = Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin")
 print("Voice model ready!")
 
-VOICES = [
-    "af_heart",
-    "af_nova",
-    "am_adam",
-    "am_echo",
-    "bf_emma",
-    "bm_george",
-]
+# ─────────────────────────────────────────
+# VOICES
+# The id (Kokoro's name) is what is stored and passed around everywhere:
+# progress in the database, audio file names, URLs, cache keys and
+# offline downloads. Listeners only ever see the name and description
+# below; this is the one place they are set. The order is the picker's.
+# ─────────────────────────────────────────
+VOICE_LABELS = {
+    "af_heart" : ("Esinam",  "warm, American, female"),
+    "af_nova"  : ("Enyonam", "American, female"),
+    "bf_emma"  : ("Enam",    "British, female"),
+    "am_adam"  : ("Elikem",  "American, male"),
+    "am_echo"  : ("Elorm",   "American, male"),
+    "bm_george": ("Eyram",   "British, male"),
+}
+VOICES = list(VOICE_LABELS)
 # Speeds the reader offers. Audio is always generated at 1.0 and the
 # browser changes speed with playbackRate, so this is only used to
 # validate the speed saved in progress.

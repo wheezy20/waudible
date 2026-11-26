@@ -1,6 +1,6 @@
 // Lock screen and notification controls (Media Session), speed, page changes,
 // preloading the next page and the sleep timer, on the persistent player.
-const { base, books: { b1, b2 }, sleep, check, section, login, waitPlaying, watchErrors, RECORDER, run } = require('./common');
+const { base, books: { b1, b2, b3 }, sleep, check, section, login, waitPlaying, watchErrors, RECORDER, run } = require('./common');
 
 run(async browser => {
   const page = await (await browser.createBrowserContext()).newPage();
@@ -128,6 +128,47 @@ run(async browser => {
   const art = await page.evaluate(async () => { const a = navigator.mediaSession.metadata.artwork[2];
     const r = await fetch(a.src); const bmp = await createImageBitmap(await r.blob()); return `${r.status} ${bmp.width}x${bmp.height}`; });
   check('generated initials artwork loads at 512x512', art === '200 512x512', art);
+
+  section('Voice names');
+  const IDS = ['af_heart', 'af_nova', 'bf_emma', 'am_adam', 'am_echo', 'bm_george'];
+  const picker = () => page.evaluate(() => ({
+    options: [...document.querySelectorAll('#voice .voice-option')].map(o => ({ value: o.querySelector('input').value,
+      name: o.querySelector('.voice-name').textContent, desc: o.querySelector('.voice-desc').textContent,
+      checked: o.querySelector('input').checked })),
+    text: document.getElementById('more-sheet').innerText }));
+  await page.click('#more-btn'); await sleep(500);
+  let v = await picker();
+  check('the picker shows the six voices by name, in order', JSON.stringify(v.options.map(o => o.name))
+        === '["Esinam","Enyonam","Enam","Elikem","Elorm","Eyram"]', v.options.map(o => o.name).join(', '));
+  check('each with a short description', v.options[0].desc === 'warm, American, female' && v.options[2].desc === 'British, female'
+        && v.options[5].desc === 'British, male' && v.options.every(o => o.desc.length > 0), v.options.map(o => o.desc).join(' | '));
+  check('behind the names the ids are unchanged', JSON.stringify(v.options.map(o => o.value)) === JSON.stringify(IDS));
+  check('no raw voice id is shown to the listener', !IDS.some(id => v.text.includes(id)));
+  check('the default voice, af_heart, shows as Esinam', v.options.find(o => o.checked).name === 'Esinam'
+        && v.options.find(o => o.checked).value === 'af_heart');
+  await page.evaluate(() => Sheets.close()); await sleep(400);
+  // A book saved earlier with an old id (bf_emma) opens with that voice, shown by its new name
+  await page.evaluate(async id => {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch('/save_progress', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+      body: JSON.stringify({ book_id: Number(id), page: 0, speed: 1, voice: 'bf_emma' }) });
+  }, b3);
+  await page.evaluate(id => Player.open(id), b3);
+  await page.waitForFunction(b3 => (document.getElementById('audio-player').getAttribute('src') || '').startsWith(`/audio/${b3}/`), { timeout: 15000 }, b3);
+  await waitPlaying(page);
+  s = await state();
+  check('a book saved with an old id plays that voice (bf_emma)', s.src === `/audio/${b3}/0?voice=bf_emma`, s.src);
+  await page.click('#more-btn'); await sleep(500);
+  v = await picker();
+  check('and the picker shows it as Enam', v.options.find(o => o.checked).value === 'bf_emma' && v.options.find(o => o.checked).name === 'Enam');
+  saves.length = 0;
+  await page.evaluate(() => [...document.querySelectorAll('#voice .voice-option')].find(o => o.querySelector('.voice-name').textContent === 'Elikem').click());
+  await page.waitForFunction(() => (document.getElementById('audio-player').getAttribute('src') || '').includes('voice=am_adam'), { timeout: 15000 });
+  await sleep(500);
+  s = await state();
+  check('choosing Elikem plays am_adam and saves the id, not the name', s.src === `/audio/${b3}/0?voice=am_adam`
+        && saves.some(x => x.voice === 'am_adam') && !saves.some(x => /Elikem/.test(JSON.stringify(x))), `${s.src} ${JSON.stringify(saves.slice(-1))}`);
+  await page.evaluate(() => Sheets.close()); await sleep(300);
 
   check('no JavaScript errors or failed requests', errors.length === 0, errors.slice(0, 5).join(' | '));
 });
