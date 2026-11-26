@@ -145,3 +145,4 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Downloads screen shows "N of M pages" with the chapters marked, adds chapters later, deletes single chapters
 - [x] Offline player handles a partial book: skips missing pages, stops at the end of a downloaded run, explains missing chapters and pages
 - [x] Real file sizes everywhere (manifest with page text and artwork sizes; the old `/offline/size` estimate is gone)
+- [x] `/sw.js`, the manifest and `/offline` sent with `Cache-Control: no-cache, max-age=0` and kept out of Cloudflare's edge cache, so worker updates apply straight away
