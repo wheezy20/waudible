@@ -15,13 +15,13 @@ It started as a single-user app on localhost and is now a small multi-user web a
 
 - **Accounts with an invite code.** Sign up with email and password; sign-up is closed unless you know the invite code.
 - **Private libraries.** Every user sees only their own books, covers, audio and listening progress.
-- **MP3 audio, made in the background.** One worker turns pages into MP3 (mono, 64 kbps) in upload order. You can start listening as soon as the first pages are ready, and a page that isn't ready yet is made on demand. Pages with nothing to read become a few seconds of silence, and one bad page never stops a book.
+- **MP3 audio, made in the background.** One worker turns pages into MP3 (mono, 48 kbps, about 22 MB per hour) in upload order. You can start listening as soon as the first pages are ready, and a page that isn't ready yet is made on demand. Pages with nothing to read become a few seconds of silence, and one bad page never stops a book.
 - **Lock-screen controls.** Title, chapter and cover show on the phone's lock screen and notification, with play, pause, previous and next page and seeking. The next page is buffered ahead of time so playback continues with the screen off.
 - **Persistent mini player.** Audio keeps playing while you move between Home and Library. The player collapses to a mini player above the bottom bar and expands again with a tap; the Back button closes the player or any open sheet first.
 - **Genre shelves.** Books sit on shelves (Self Help, Academic, Christian, or your own), with filter chips, cover art (yours or generated initials) and a Continue listening row.
 - **Contents drawer.** Jump to any chapter from the PDF's table of contents, with dots showing which pages are ready.
 - **Player controls.** Speed from 0.75x to 2x (changed in the browser, so no new audio is needed), six voices, 15 second skips, jump to page, sleep timer, and the page text.
-- **Offline listening.** Install WAudible to your home screen and download a finished book to the phone. It then plays with no connection, from the lock screen too, with seeking, chapters, speed and the sleep timer. The app suggests downloading a ready book instead of streaming it. Library, Downloads lists what is on the device and how much space it uses. Progress made offline is sent to the server when you're back online.
+- **Offline listening.** Install WAudible to your home screen and download a finished book, or just some of its chapters or pages, to the phone. It then plays with no connection, from the lock screen too, with seeking, chapters, speed and the sleep timer. The app suggests downloading a ready book instead of streaming it. Library, Downloads lists what is on the device and how much space it uses. Progress made offline is sent to the server when you're back online.
 - **Picks up where you left off**, on any device.
 - **Works on phones, tablets and desktop.**
 
@@ -152,11 +152,13 @@ The test suites cover sign-up and login, per-user privacy, uploads, the audio wo
 
 ## Offline listening and its limits
 
+- You choose what to download: the chapter you're on and the next two (the default), any chapters from the contents with the size of each, a page range, or the whole book. You can add more chapters later or delete single chapters in Library, Downloads.
+- With only some chapters on the phone, offline playback skips the missing pages when you press next or previous, stops with a message at the end of a downloaded run, and says so if you pick a page that isn't there. Online, the book plays as usual.
 - A download is the audio for **one voice**, the one you listen with when you download it. Other voices still need a connection.
 - Only **finished** books can be downloaded; a book still being prepared shows the option disabled until its audio is ready.
 - Downloads happen while WAudible is open. If the app is closed or the connection drops part way, the download carries on from where it stopped the next time WAudible is open and online.
 - With no connection, uploading, deleting books, changing voice and books that aren't downloaded are unavailable, and the app says so.
-- Downloads use the browser's storage. WAudible asks the browser to keep them (persistent storage), but the browser or the phone can still clear them if space runs out or site data is cleared. There must be room for the whole book before a download starts.
+- Downloads use the browser's storage. WAudible asks the browser to keep them (persistent storage), but the browser or the phone can still clear them if space runs out or site data is cleared. There must be room for what you chose before a download starts.
 - Positions saved offline are sent when you're back online. If you also listened on another device in the meantime, the most recent position wins.
 - Downloads belong to the account that made them. Logging out deletes them from the device. Another account signed in on the same browser never sees them.
 - Downloaded books are stored unencrypted in the browser's storage on the phone.
@@ -215,6 +217,7 @@ deploy/            systemd unit and install steps
 tests/             Test suites (see tests/README.md)
 run_tests.sh       Runs every test suite against a temporary Neon branch
 init_db.py         Creates the database tables
+reencode_audio.py  One-off: re-encodes existing page audio to the current bitrate
 run.sh             Local development server
 run_prod.sh        Production server (gunicorn)
 gunicorn.conf.py   gunicorn settings

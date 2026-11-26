@@ -8,6 +8,7 @@ const { base, env, sleep, check, section, login, waitPlaying, waitView, watchErr
 
 const A = { b4: env.BOOK4, b5: env.BOOK5, b6: env.BOOK6 };
 const B_BOOK = env.BOOK7;
+const B8 = env.BOOK8;      // ten pages in five chapters of two
 const SHOTS = env.SHOT_DIR;
 
 run(async browser => {
@@ -160,13 +161,14 @@ run(async browser => {
     const sizes = await Promise.all(m.files.map(async f => {
       const r = await fetch(f.url); return (await r.blob()).size === f.bytes;
     }));
-    return { theirsMan: await s(`/offline/manifest/${theirs}`), theirsSize: await s(`/offline/size/${theirs}`),
+    const lite = await (await fetch(`/offline/manifest/${mine}?texts=0`)).json();
+    return { theirsMan: await s(`/offline/manifest/${theirs}`), theirsSize: await s(`/offline/manifest/${theirs}?texts=0`),
              m: { title: m.title, author: m.author, pages: m.pages, voice: m.voice, toc: m.toc.map(t => t.title),
                   texts: m.texts.length, audio: m.files.filter(f => f.kind === 'audio').length,
                   covers: m.files.filter(f => f.kind !== 'audio').map(f => f.url), cover: m.cover },
-             sizesMatch: sizes.every(Boolean), est: await (await fetch(`/offline/size/${mine}`)).json(), total: m.bytes };
+             sizesMatch: sizes.every(Boolean), lite, textBytes: m.texts.map(t => new Blob([t]).size), mtb: m.text_bytes, total: m.bytes };
   }, A.b4, B_BOOK);
-  check("another user's book: manifest and size are 404", routes.theirsMan === 404 && routes.theirsSize === 404,
+  check("another user's book: the manifest (with or without text) is 404", routes.theirsMan === 404 && routes.theirsSize === 404,
         `${routes.theirsMan} ${routes.theirsSize}`);
   check('manifest: details, contents, every page text and audio for the current voice',
         routes.m.title === 'Offline Story' && routes.m.author === 'Ada Writer' && routes.m.pages === 4 && routes.m.voice === 'af_heart'
@@ -175,8 +177,9 @@ run(async browser => {
   check('manifest: the cover and the three lock-screen sizes', JSON.stringify(routes.m.covers) === JSON.stringify(
     [`/cover/${A.b4}`, `/cover/${A.b4}?size=96`, `/cover/${A.b4}?size=192`, `/cover/${A.b4}?size=512`]), routes.m.covers.join(' '));
   check('every file is exactly the size the manifest says', routes.sizesMatch);
-  check('size estimate is close to the real total', routes.est.ready && Math.abs(routes.est.bytes - routes.total) < 0.25 * routes.total,
-        `estimate ${routes.est.bytes}, real ${routes.total}`);
+  check("every page's text size is its real size", JSON.stringify(routes.mtb) === JSON.stringify(routes.textBytes), routes.mtb.join(','));
+  check('?texts=0 gives the same real sizes without the text', !('texts' in routes.lite) && routes.lite.bytes === routes.total
+        && JSON.stringify(routes.lite.text_bytes) === JSON.stringify(routes.mtb), `${routes.lite.bytes} ${routes.total}`);
 
   section('The download suggestion');
   await openCard(A.b5);
@@ -185,8 +188,8 @@ run(async browser => {
   await sleep(500);   // slide-in
   const ask = await page.evaluate(() => ({ open: Sheets.isOpen('ask-sheet'), text: document.getElementById('ask-sheet').innerText }));
   check('opening a ready book that is not downloaded suggests downloading it', ask.open);
-  check('it says the size and why', /About \d+(\.\d)? MB\. Streaming uses data and stops when your connection drops\./.test(ask.text)
-        && ask.text.includes('Download for offline listening?'), ask.text.replace(/\s+/g, ' ').slice(0, 200));
+  check('it says the size and why', /About \d+(\.\d)? MB for (the whole book|this chapter[a-z ]*)\. Streaming uses data and stops when your connection drops\./.test(ask.text)
+        && ask.text.includes('Download a few chapters for offline listening?'), ask.text.replace(/\s+/g, ' ').slice(0, 200));
   check('buttons: Download, Not now, Don\'t ask again for this book', ['Download', 'Not now', "Don't ask again for this book"]
         .every(t => ask.text.includes(t)));
   await shots('popup');
@@ -234,15 +237,18 @@ run(async browser => {
   await page.click('#book-download');
   await page.waitForFunction(() => !document.getElementById('dl-start').disabled, { timeout: 10000 });
   await sleep(500);   // slide-in
-  const conf = await page.evaluate(() => ({ size: document.getElementById('dl-size').textContent,
+  const conf = await page.evaluate(() => ({ total: document.getElementById('dl-total').textContent,
+                                            bytes: Number(document.getElementById('dl-total').dataset.bytes),
                                             note: document.getElementById('dl-voice-note').textContent,
                                             book: document.getElementById('dl-book').textContent }));
-  check('confirm step shows the book and its size first', /^\d+(\.\d)? MB$/.test(conf.size) && conf.book === 'Offline Story', `${conf.book}: ${conf.size}`);
+  // Two chapters: the default (current chapter and the next two) is the whole book
+  check('confirm step shows the book and its real size first', conf.book === 'Offline Story' && conf.bytes === routes.total
+        && /^2 chapters, 4 pages, \d+(\.\d)? MB$/.test(conf.total), `${conf.book}: ${conf.total} (${conf.bytes} of ${routes.total})`);
   check('it says only the current voice is downloaded', conf.note.includes('af_heart') && conf.note.includes('Other voices need a connection'), conf.note);
   await page.click('#dl-start');
-  await page.waitForFunction(() => !document.getElementById('dl-progress').hidden || !document.getElementById('dl-done').hidden, { timeout: 5000 });
+  await page.waitForFunction(() => !document.getElementById('dl-progress').hidden || !document.getElementById('dl-have').hidden, { timeout: 5000 });
   check('progress shows with a ring and Cancel', await page.evaluate(() => !document.getElementById('dl-progress').hidden
-        || !document.getElementById('dl-done').hidden));
+        || !document.getElementById('dl-have').hidden));
   await waitState(A.b4, 'downloaded');
   const rec = await idb('books', [userA, Number(A.b4)]);
   const cached = await page.evaluate(async (u, files) => {
@@ -253,7 +259,9 @@ run(async browser => {
         && rec.voice === 'af_heart', `${rec.complete} ${rec.texts.length} ${rec.toc.length}`);
   check('every file is in Cache Storage at the size the manifest says', cached.length === 8 && cached.every(Boolean), cached.join(','));
   check('cached under this user\'s id', (await cacheUrls(userA)).includes(`/audio/${A.b4}/0?voice=af_heart`));
-  check('done step says what is downloaded', (await page.$eval('#dl-done-text', el => el.textContent)).includes('af_heart'));
+  await page.waitForFunction(() => !document.getElementById('dl-have').hidden, { timeout: 5000 });
+  check('afterwards the sheet says the whole book is on this device', (await page.$eval('#dl-have', el => el.textContent))
+        .startsWith('The whole book is on this device'), await page.$eval('#dl-have', el => el.textContent));
   await page.evaluate(() => Sheets.close()); await sleep(300);
   check('the card shows it is downloaded', await page.$eval(`.book-card[data-book-id="${A.b4}"]`, el => el.classList.contains('is-downloaded')));
   const persisted = await page.evaluate(() => navigator.storage.persisted());
@@ -306,13 +314,120 @@ run(async browser => {
     total: document.querySelector('.downloads-total').textContent, all: !!document.getElementById('downloads-delete-all'),
     del: document.querySelectorAll('.dl-delete').length,
     nav: document.querySelector('.bottom-nav .is-active').dataset.nav }));
-  check('lists the downloaded books with their size and voice', list.items.length === 2 && list.items.every(t => / \| \d+(\.\d)? MB, voice af_heart$/.test(t)),
+  check('lists the downloaded books with their size and voice', list.items.length === 2 && list.items.every(t => / \| Whole book, \d+(\.\d)? MB, voice af_heart$/.test(t)),
         list.items.join(' / '));
   check('total space used, a delete button per book and Delete all', /^2 books, \d+(\.\d)? MB used on this device$/.test(list.total)
         && list.del === 2 && list.all, list.total);
   check('Library stays the active tab', list.nav === 'library', list.nav);
   await shots('downloads');
   await page.setViewport({ width: 390, height: 844 });
+
+  section('Chapter downloads: choosing what to download');
+  await goto('/');
+  await openMenu(B8);
+  await page.click('#book-download');
+  await page.waitForFunction(() => document.querySelectorAll('.dl-chapter').length > 0 && !document.getElementById('dl-start').disabled, { timeout: 15000 });
+  await sleep(500);   // slide-in
+  // The real size of each page (audio plus text) and of the cover art, file by file
+  const real = await page.evaluate(async id => {
+    const m = await (await fetch(`/offline/manifest/${id}`)).json();
+    const size = async u => (await (await fetch(u)).blob()).size;
+    const audio = await Promise.all(m.files.filter(f => f.kind === 'audio').map(f => size(f.url)));
+    const art = (await Promise.all(m.files.filter(f => f.kind !== 'audio').map(f => size(f.url)))).reduce((a, b) => a + b, 0);
+    return { page: audio.map((b, i) => b + new Blob([m.texts[i]]).size), art };
+  }, B8);
+  const pageSum = (from, to) => real.page.slice(from, to + 1).reduce((a, b) => a + b, 0);
+  const sheetInfo = () => page.evaluate(() => ({
+    rows: [...document.querySelectorAll('.dl-chapter')].map(r => ({ title: r.querySelector('.dl-chapter-title').textContent,
+      meta: r.querySelector('.dl-chapter-meta').textContent, checked: r.querySelector('input').checked,
+      disabled: r.querySelector('input').disabled, bytes: Number(r.dataset.bytes) })),
+    total: document.getElementById('dl-total').textContent, bytes: Number(document.getElementById('dl-total').dataset.bytes),
+    pages: Number(document.getElementById('dl-total').dataset.pages), button: document.getElementById('dl-start').textContent,
+    modes: [...document.querySelectorAll('.dl-mode')].map(b => b.textContent) }));
+  let si = await sheetInfo();
+  check('the sheet offers chapters, the whole book or a page range', JSON.stringify(si.modes) === '["Chapters","Whole book","Pages"]');
+  check('it lists the chapters from the contents with their pages', JSON.stringify(si.rows.map(r => r.title))
+        === '["Part One","Part Two","Part Three","Part Four","Part Five"]' && si.rows[0].meta.startsWith('p. 1 to 2, ')
+        && si.rows[4].meta.startsWith('p. 9 to 10, '), si.rows.map(r => r.meta).join(' / '));
+  check("each chapter's size is the real size of its pages", si.rows.every((r, i) => r.bytes === pageSum(2 * i, 2 * i + 1)),
+        si.rows.map((r, i) => `${r.bytes}/${pageSum(2 * i, 2 * i + 1)}`).join(' '));
+  check('by default the current chapter and the next two are ticked', JSON.stringify(si.rows.map(r => r.checked)) === '[true,true,true,false,false]');
+  check('running total: 3 chapters, 6 pages, real size including the cover art', si.pages === 6 && si.bytes === pageSum(0, 5) + real.art
+        && /^3 chapters, 6 pages, \d+(\.\d)? MB$/.test(si.total) && /^Download \d/.test(si.button), `${si.total} | ${si.button}`);
+  await page.click('.dl-chapter[data-chapter="3"] input');
+  si = await sheetInfo();
+  check('ticking a fourth chapter updates the total', si.pages === 8 && si.bytes === pageSum(0, 7) + real.art && si.total.startsWith('4 chapters, 8 pages'), si.total);
+  await page.click('.dl-chapter[data-chapter="3"] input');
+  await page.click('.dl-mode[data-mode="range"]');
+  await page.evaluate(() => { const f = document.getElementById('dl-from'), t = document.getElementById('dl-to');
+                              f.value = '4'; t.value = '7'; t.dispatchEvent(new Event('input')); });
+  si = await sheetInfo();
+  check('a page range (4 to 7) counts those pages at their real size', si.pages === 4 && si.bytes === pageSum(3, 6) + real.art
+        && si.total.startsWith('4 pages, '), si.total);
+  await page.evaluate(() => { const t = document.getElementById('dl-to'); t.value = '99'; t.dispatchEvent(new Event('input')); });
+  si = await sheetInfo();
+  check('an impossible range is explained and cannot start', si.pages === 0 && si.total.startsWith('Enter pages from 1 to 10')
+        && (await page.$eval('#dl-start', b => b.disabled)), si.total);
+  await page.click('.dl-mode[data-mode="all"]');
+  si = await sheetInfo();
+  check('whole book: all 10 pages', si.pages === 10 && si.bytes === pageSum(0, 9) + real.art, si.total);
+  await page.click('.dl-mode[data-mode="chapters"]');
+  await shots('confirm-chapters');
+  await page.setViewport({ width: 390, height: 844 });
+  await sleep(300);
+  await page.click('#dl-start');
+  await page.waitForFunction(id => { const s = Offline.state(id); return s.name === 'downloaded' && s.have === 6; }, { timeout: 60000 }, B8);
+  let r8 = await idb('books', [userA, Number(B8)]);
+  let urls8 = await cacheUrls(userA);
+  check('only the chosen chapters are downloaded (pages 1 to 6)', JSON.stringify(r8.have) === '[0,1,2,3,4,5]' && r8.complete
+        && JSON.stringify(r8.pending) === '[]', JSON.stringify(r8.have));
+  check('their audio is cached and the other pages are not', [0, 1, 2, 3, 4, 5].every(x => urls8.includes(`/audio/${B8}/${x}?voice=af_heart`))
+        && ![6, 7, 8, 9].some(x => urls8.includes(`/audio/${B8}/${x}?voice=af_heart`)));
+  check('page text is kept only for the downloaded pages', r8.texts.filter(Boolean).length === 6 && r8.texts[6] === null);
+  check('the sheet then says how much is on the device', (await page.$eval('#dl-have', el => el.textContent)).startsWith('6 of 10 pages are on this device'));
+  await page.evaluate(() => Sheets.close()); await sleep(400);
+
+  section('Chapter downloads: Downloads screen, adding and deleting chapters');
+  await goto('/downloads');
+  await page.waitForSelector(`.dl-item[data-book-id="${B8}"]`);
+  const meta8 = () => page.$eval(`.dl-item[data-book-id="${B8}"] .dl-meta`, el => el.textContent);
+  check('the book shows "6 of 10 pages"', /^6 of 10 pages, \d+(\.\d)? MB, voice af_heart$/.test(await meta8()), await meta8());
+  await page.click(`#dl-toggle-${B8}`);
+  await page.waitForSelector(`#dl-details-${B8} .dl-ch`);
+  const marks = () => page.$$eval(`#dl-details-${B8} .dl-ch`, lis => lis.map(li =>
+    li.classList.contains('is-here') ? 'here' : li.classList.contains('is-part') ? 'part' : 'none'));
+  check('its chapters are listed with the downloaded ones marked', JSON.stringify(await marks()) === '["here","here","here","none","none"]',
+        (await marks()).join(','));
+  await shots('downloads-chapters');
+  await page.setViewport({ width: 390, height: 844 });
+  await page.click(`#dl-details-${B8} .dl-add`);
+  await page.waitForFunction(() => Sheets.isOpen('download-sheet') && document.querySelectorAll('.dl-chapter').length === 5
+        && !document.getElementById('dl-start').disabled, { timeout: 15000 });
+  await sleep(500);   // slide-in
+  si = await sheetInfo();
+  check('Add chapters: those already here are ticked, locked and marked', si.rows.slice(0, 3).every(r => r.checked && r.disabled
+        && r.meta.endsWith('on this device')), si.rows.map(r => r.meta).join(' / '));
+  check('and the next chapters not yet here are suggested', JSON.stringify(si.rows.map(r => r.checked)) === '[true,true,true,true,true]'
+        && !si.rows[3].disabled, JSON.stringify(si.rows.map(r => r.checked)));
+  await page.click('.dl-chapter[data-chapter="3"] input');
+  si = await sheetInfo();
+  check('adding one chapter counts only its pages (the cover art is already here)', si.pages === 2 && si.bytes === pageSum(8, 9), si.total);
+  await page.click('#dl-start');
+  await page.waitForFunction(id => { const s = Offline.state(id); return s.name === 'downloaded' && s.have === 8; }, { timeout: 60000 }, B8);
+  r8 = await idb('books', [userA, Number(B8)]);
+  check('the added chapter joins the download', JSON.stringify(r8.have) === '[0,1,2,3,4,5,8,9]', JSON.stringify(r8.have));
+  await page.evaluate(() => Sheets.close()); await sleep(400);
+  await page.waitForFunction(id => /^8 of 10 pages/.test(document.querySelector(`.dl-item[data-book-id="${id}"] .dl-meta`).textContent), { timeout: 5000 }, B8);
+  check('Downloads now shows "8 of 10 pages"', /^8 of 10 pages/.test(await meta8()), await meta8());
+  check('chapter marks follow', JSON.stringify(await marks()) === '["here","here","here","none","here"]', (await marks()).join(','));
+  await page.click(`#dl-details-${B8} .dl-ch[data-chapter="1"] .dl-ch-delete`);
+  await page.waitForFunction(id => Offline.state(id).have === 6, { timeout: 10000 }, B8);
+  r8 = await idb('books', [userA, Number(B8)]);
+  urls8 = await cacheUrls(userA);
+  check('deleting a chapter removes just its pages from the device', JSON.stringify(r8.have) === '[0,1,4,5,8,9]'
+        && !urls8.includes(`/audio/${B8}/2?voice=af_heart`) && !urls8.includes(`/audio/${B8}/3?voice=af_heart`)
+        && urls8.includes(`/audio/${B8}/4?voice=af_heart`), JSON.stringify(r8.have));
+  check('and its marks update', JSON.stringify(await marks()) === '["here","none","here","none","here"]', (await marks()).join(','));
 
   section('Offline: a book that is not downloaded');
   await goto('/');
@@ -338,7 +453,7 @@ run(async browser => {
     badge: !document.getElementById('offline-badge').hidden, name: document.getElementById('offline-user-name').textContent,
     addr: location.pathname, token: !!document.querySelector('meta[name="csrf-token"]') }));
   check('a page load with no network shows the offline page (service worker fallback)', off.addr === '/library');
-  check('it lists only the downloaded books, drawn from this device', JSON.stringify(off.titles) === '["Offline Story","Third Story"]', off.titles.join(', '));
+  check('it lists only the downloaded books, drawn from this device', JSON.stringify(off.titles) === '["Chaptered Book","Offline Story","Third Story"]', off.titles.join(', '));
   check('the badge shows and the user name is the cached one', off.badge && off.name === 'Eyram Wilson', off.name);
   check('no CSRF token on the offline page', !off.token);
   await shots('offline');
@@ -420,6 +535,60 @@ run(async browser => {
   await page.click('#mini-play'); await sleep(300);
   const p = await idb('progress', [userA, Number(A.b4)]);
   check('progress is saved on this device while offline', p && p.page === 2 && p.synced === false && p.speed === 1.25, JSON.stringify(p));
+
+  section('Offline: a book with only some chapters');
+  // Pages 1, 2, 5, 6, 9 and 10 are here (Parts One, Three and Five)
+  audioResponses.length = 0;
+  await page.$eval(`.dl-open[data-open-book="${B8}"]`, el => el.click());
+  await page.waitForFunction(id => Player.bookId() === Number(id), { timeout: 15000 }, B8);
+  await waitPlaying(page);
+  const src8 = () => page.evaluate(() => new URL(document.getElementById('audio-player').src).pathname);
+  check('the partly downloaded book opens and plays offline', (await src8()) === `/audio/${B8}/0`, await src8());
+  await page.evaluate(() => { document.getElementById('audio-player').currentTime = 12; });
+  await page.waitForFunction(() => { const a = document.getElementById('audio-player'); return !a.seeking && a.currentTime >= 11.5; }, { timeout: 10000 });
+  check('seeking works, with 206 answers from the service worker', audioResponses.some(r => r.path.startsWith(`/audio/${B8}/`) && r.sw && r.status === 206),
+        audioResponses.slice(0, 4).map(r => `${r.status} ${r.path}`).join(', '));
+  const r206 = await page.evaluate(async id => {
+    const ok = await fetch(`/audio/${id}/4?voice=af_heart`, { headers: { Range: 'bytes=0-99' } });
+    let missing;
+    try { missing = (await fetch(`/audio/${id}/2?voice=af_heart`, { headers: { Range: 'bytes=0-99' } })).status; } catch (e) { missing = 'network error'; }
+    return [ok.status, ok.headers.get('content-range'), missing];
+  }, B8);
+  check('a Range request for a downloaded page gets 206; a missing page is not served', r206[0] === 206 && /^bytes 0-99\/\d+$/.test(r206[1])
+        && r206[2] === 'network error', r206.join(' | '));
+  await page.click('#btn-next'); await waitPage(2);
+  check('next goes to page 2', (await src8()) === `/audio/${B8}/1`);
+  await page.click('#btn-next'); await waitPage(5); await waitPlaying(page);
+  check('next skips pages 3 and 4, which are not here, to page 5', (await src8()) === `/audio/${B8}/4`, await src8());
+  await page.click('#btn-prev'); await waitPage(2);
+  check('previous skips back over them to page 2', (await src8()) === `/audio/${B8}/1`, await src8());
+  await page.evaluate(() => window.__ms.actions.nexttrack({ action: 'nexttrack' })); await waitPage(5);
+  check('the lock-screen next button skips the same way', (await src8()) === `/audio/${B8}/4`);
+  await page.click('#toc-open-btn'); await sleep(500);
+  const toc8 = await page.evaluate(() => ({ items: [...document.querySelectorAll('.toc-item')].map(i => i.classList.contains('toc-unavailable')),
+    legend: document.getElementById('legend-missing').textContent }));
+  check('the contents drawer marks Parts Two and Four as not downloaded', JSON.stringify(toc8.items) === '[false,true,false,true,false]'
+        && toc8.legend === 'Not downloaded', JSON.stringify(toc8));
+  await page.evaluate(() => document.querySelectorAll('.toc-item')[3].click());
+  await page.waitForFunction(() => !document.getElementById('toast').hidden && /isn't downloaded/.test(document.getElementById('toast').textContent), { timeout: 5000 });
+  check('choosing a chapter that is not here explains it and stays put', (await toastText()).startsWith("Page 7 isn't downloaded")
+        && (await src8()) === `/audio/${B8}/4`, await toastText());
+  await page.evaluate(() => document.querySelectorAll('.toc-item')[4].click());
+  await waitPage(9);
+  check('choosing a downloaded chapter plays it', (await src8()) === `/audio/${B8}/8`);
+  await page.evaluate(() => closeToc()); await sleep(400);
+  await page.evaluate(() => { document.getElementById('jump-input').value = '3'; window.jumpToPage(); });
+  const jumpErr = await page.$eval('#jump-error', el => el.textContent);
+  check('jumping to a page that is not here explains it', jumpErr.startsWith("Page 3 isn't downloaded") && (await src8()) === `/audio/${B8}/8`, jumpErr);
+  await page.evaluate(() => { document.getElementById('jump-input').value = '6'; window.jumpToPage(); });
+  await waitPage(6); await waitPlaying(page);
+  await page.evaluate(() => { const a = document.getElementById('audio-player'); a.currentTime = a.duration - 0.4; });
+  await page.waitForFunction(() => document.getElementById('player-status').textContent === 'End of the downloaded pages', { timeout: 10000 });
+  const end8 = await page.evaluate(() => ({ page: document.getElementById('page-number').textContent,
+    paused: document.getElementById('audio-player').paused, toast: document.getElementById('toast').textContent }));
+  check('at the end of a downloaded run it stops with a clear message', end8.page === '6' && end8.paused
+        && end8.toast.startsWith("That's the end of the downloaded pages. Page 7"), JSON.stringify(end8));
+  await page.click('#player-minimise'); await sleep(400);
 
   section('Back online: progress syncs');
   await setOffline(false);
@@ -563,6 +732,6 @@ run(async browser => {
         && (await page.$eval('#offline-user-name', el => el.textContent)) === '');
   await setOffline(false);
 
-  const real = errors.filter(e => !/^(404|409|416) \/(audio|offline)/.test(e) && !e.includes('ERR_INTERNET_DISCONNECTED'));
-  check('no JavaScript errors or unexpected failed requests', real.length === 0, real.slice(0, 5).join(' | '));
+  const realErrors = errors.filter(e => !/^(404|409|416) \/(audio|offline)/.test(e) && !e.includes('ERR_INTERNET_DISCONNECTED'));
+  check('no JavaScript errors or unexpected failed requests', realErrors.length === 0, realErrors.slice(0, 5).join(' | '));
 });

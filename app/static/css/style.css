@@ -1419,11 +1419,11 @@ body.is-offline [data-sheet-open="add-sheet"] { opacity: 0.45; }
 }
 .downloads-confirm .confirm-actions { margin-top: 14px; }
 .downloads-list { list-style: none; margin: 0; padding: 0; }
-.dl-item {
+.dl-item { border-bottom: 1px solid var(--line); }
+.dl-row {
     display: flex;
     align-items: center;
-    gap: 4px;
-    border-bottom: 1px solid var(--line);
+    gap: 0;
 }
 .dl-open {
     flex: 1;
@@ -1508,6 +1508,115 @@ body.is-offline [data-sheet-open="add-sheet"] { opacity: 0.45; }
             mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
     transition: background 0.2s;
 }
+
+/* Download sheet: what to download */
+.dl-have { margin: -4px 0 12px; font-size: 14px; color: var(--green); line-height: 1.45; }
+.dl-have[hidden] { display: none; }
+.dl-modes {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 12px;
+    border-radius: var(--pill);
+    background: var(--surface-3);
+}
+.dl-mode {
+    flex: 1;
+    min-height: 40px;
+    border: none;
+    border-radius: var(--pill);
+    background: none;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 700;
+}
+.dl-mode[aria-checked="true"] { background: var(--text); color: var(--bg); }
+.dl-chapters {
+    max-height: min(38vh, 320px);
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    overscroll-behavior: contain;
+}
+.dl-chapters[hidden] { display: none; }
+.dl-chapter {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 56px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+}
+.dl-chapter:last-child { border-bottom: none; }
+.dl-chapter.dl-sub { padding-left: 18px; }
+.dl-chapter input {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    accent-color: var(--orange);
+}
+.dl-chapter.is-here { cursor: default; }
+.dl-chapter.is-here input { accent-color: var(--green); }
+.dl-chapter-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dl-chapter-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dl-chapter-meta { font-size: 13px; color: var(--text-2); }
+.dl-chapter.is-here .dl-chapter-meta { color: var(--green); }
+.dl-range { display: flex; gap: 12px; align-items: flex-end; }
+.dl-range[hidden] { display: none; }
+.dl-range-field { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-2); font-weight: 600; }
+.dl-range-field .field { width: 100%; }
+.dl-all-note { font-size: 15px; color: var(--text-2); }
+.dl-all-note[hidden] { display: none; }
+.dl-total { margin-top: 12px; font-size: 15px; font-weight: 700; }
+.dl-total:empty { display: none; }
+.dl-state .dl-note { margin-top: 6px; }
+.dl-state .confirm-actions { margin-top: 16px; }
+.dl-remove { display: block; margin: 10px auto 0; }
+.dl-remove[hidden] { display: none; }
+
+/* Downloads screen: chapters of each book */
+.dl-toggle { color: var(--text-2); }
+.dl-toggle svg { transition: transform 0.2s var(--ease); }
+.dl-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dl-details { padding: 0 0 14px 70px; }
+.dl-chapter-list { list-style: none; margin: 0; padding: 0; }
+.dl-ch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+}
+.dl-ch-mark {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--line-strong);
+}
+.dl-ch.is-here .dl-ch-mark { border-color: var(--green); background: var(--green); box-shadow: inset 0 0 0 3px var(--surface); }
+.dl-ch.is-part .dl-ch-mark { border-color: var(--green); background: linear-gradient(90deg, var(--green) 50%, transparent 50%); }
+.dl-ch-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dl-ch-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-ch-meta { font-size: 12px; color: var(--text-2); }
+.dl-ch.is-here .dl-ch-meta { color: var(--green); }
+.dl-ch-delete { color: var(--text-3); }
+.dl-ch-delete:hover { color: var(--danger); }
+.dl-add { margin-top: 8px; }
+
+/* Contents drawer: chapters that aren't on the device */
+.toc-item.toc-unavailable .toc-label,
+.toc-item.toc-unavailable .toc-pg { color: var(--text-3); }
+.toc-item.toc-unavailable .toc-label::after { content: ' (not downloaded)'; font-size: 12px; }
 
 /* Suggestion sheet */
 .ask-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }

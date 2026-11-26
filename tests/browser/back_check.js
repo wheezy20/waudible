@@ -119,6 +119,9 @@ run(async browser => {
     await onePressHome(`More closed by ${how}`);
   }
 
+  // "End of page" stops at the end of the 30 second page; start from the
+  // top so a slow run can't reach the end during these steps
+  await page.evaluate(() => { document.getElementById('audio-player').currentTime = 0; });
   await expand(); await clickIn('#sleep-btn'); await clickIn('.sleep-opt[data-sleep="page"]');
   s = await state();
   check('choosing a sleep option closes the sheet only', !s.sheet && s.expanded && s.depth === 1, JSON.stringify(s));

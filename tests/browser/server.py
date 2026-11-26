@@ -47,7 +47,11 @@ try:
         pw2 = helpers.password()
         uid2 = helpers.create_user("browser2", pw2, "Second Person")
         b7, _ = helpers.add_book(uid2, "Someone Else's Book", 2, genre="Fiction", ready_pages=2)
-        extra = {"BOOK4": str(b4), "BOOK5": str(b5), "BOOK6": str(b6), "BOOK7": str(b7),
+        # Ten pages in five chapters of two pages, for chapter downloads
+        b8, _ = helpers.add_book(uid, "Chaptered Book", 10, toc=[[1, "Part One", 1], [1, "Part Two", 3], [1, "Part Three", 5],
+                                 [1, "Part Four", 7], [1, "Part Five", 9]], author="Dee Writer", genre="Fiction", ready_pages=10)
+        extra = {"BOOK8": str(b8),
+                 "BOOK4": str(b4), "BOOK5": str(b5), "BOOK6": str(b6), "BOOK7": str(b7),
                  "EMAIL2": helpers.email("browser2"), "PASSWORD2": pw2}
     upload_pdf = os.path.join(helpers.DATA_DIR, "upload_test.pdf")
     with open(upload_pdf, "wb") as f:

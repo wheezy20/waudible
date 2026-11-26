@@ -42,6 +42,8 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 ## 4. Convert generated audio from WAV to MP3
 
 - [x] Generate MP3 (mono, 64 kbps) with ffmpeg instead of WAV
+- [x] Lower the bitrate to 48 kbps (`MP3_BITRATE_KBPS`), old 64 kbps files keep working
+- [ ] Re-encode the existing audio on the server: `python reencode_audio.py --convert` (dry run: 491 files, 438 MB now, about 329 MB after)
 - [x] Serve MP3 as `audio/mpeg`
 - [x] Generate once per voice at speed 1.0; the browser changes speed with `playbackRate`
 - [x] Check for ffmpeg at startup
@@ -139,3 +141,7 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Progress saved on the device while offline and synced when back online (last write wins)
 - [x] Cleanup: books deleted on the server lose their downloads, logging out deletes the user's downloads, one account never sees another's
 - [x] `offline` browser suite in `run_tests.sh`
+- [x] Chapter downloads: choose chapters (with sizes and a running total), the whole book or a page range; default is the current chapter and the next two
+- [x] Downloads screen shows "N of M pages" with the chapters marked, adds chapters later, deletes single chapters
+- [x] Offline player handles a partial book: skips missing pages, stops at the end of a downloaded run, explains missing chapters and pages
+- [x] Real file sizes everywhere (manifest with page text and artwork sizes; the old `/offline/size` estimate is gone)

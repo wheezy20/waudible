@@ -6,9 +6,12 @@ import numpy as np
 # ─────────────────────────────────────────
 # MP3 ENCODING WITH FFMPEG
 # Always an argument list, never a shell string.
-# Mono, 64 kbps is plenty for speech.
+# Mono at Kokoro's sample rate (24 kHz). 48 kbps keeps speech clear at
+# three quarters of the old 64 kbps size; files made at 64 kbps still
+# play as they are (same names, same content type).
 # ─────────────────────────────────────────
-MP3_OUTPUT_ARGS = ["-ac", "1", "-codec:a", "libmp3lame", "-b:a", "64k", "-f", "mp3"]
+MP3_BITRATE_KBPS = 48
+MP3_OUTPUT_ARGS  = ["-ac", "1", "-codec:a", "libmp3lame", "-b:a", f"{MP3_BITRATE_KBPS}k", "-f", "mp3"]
 
 
 def check_ffmpeg():

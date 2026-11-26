@@ -150,6 +150,58 @@ try:
     worker.enqueue(after_id)
     T.check("a new book after the restart finishes", wait_ready(after_id, 60) == 1)
     T.check("the worker is alive at the end", worker.worker_alive())
+
+    T.section("48 kbps audio and re-encoding old 64 kbps pages")
+    import os
+    import re
+    import sys
+    from app.audio_codec import MP3_BITRATE_KBPS
+    from app.storage import AUDIO_DIR
+
+    def kbps(path):
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate,sample_rate,channels",
+                              "-of", "default=nw=1", path], capture_output=True, text=True).stdout
+        v = dict(line.split("=", 1) for line in out.split())
+        return int(v["bit_rate"]) // 1000, int(v["sample_rate"]), int(v["channels"])
+
+    T.check("new pages are MP3, mono, 24 kHz, 48 kbps (one named constant)", MP3_BITRATE_KBPS == 48
+            and kbps(files[0]) == (48, 24000, 1), kbps(files[0]))
+    # An old book folder: three pages made at 64 kbps, one already at 48
+    old = os.path.join(AUDIO_DIR, "zz_reencode_test")
+    os.makedirs(old, exist_ok=True)
+    olds = []
+    for i, rate in enumerate((64, 64, 64, 48)):
+        path = os.path.join(old, f"page{i}_vaf_heart.mp3")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"anoisesrc=d=20:c=pink:r=24000:a=0.2",
+                        "-ac", "1", "-codec:a", "libmp3lame", "-b:a", f"{rate}k", path], check=True)
+        olds.append(path)
+    before = {p: (os.path.getsize(p), os.path.getmtime(p)) for p in olds}
+    durations = {p: duration(p)[1] for p in olds}
+    env = {**os.environ, "WAUDIBLE_DATA_DIR": helpers.DATA_DIR}
+    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reencode_audio.py")
+    run = lambda *a: subprocess.run([sys.executable, script, *a], env=env, capture_output=True, text=True)
+
+    dry = run()
+    m = re.search(r"would be re-encoded \(dry run, add --convert\): (\d+)", dry.stdout)
+    T.check("dry run (the default) reports the three 64 kbps pages and changes nothing", dry.returncode == 0 and m
+            and int(m.group(1)) == 3 and all((os.path.getsize(p), os.path.getmtime(p)) == before[p] for p in olds), dry.stdout)
+    T.check("dry run prints the total size before and an estimate after", "Total size before:" in dry.stdout
+            and "Total size after:" in dry.stdout and "(estimated)" in dry.stdout)
+    conv = run("--convert")
+    m = re.search(r"re-encoded: (\d+)", conv.stdout)
+    T.check("--convert re-encodes the three pages", conv.returncode == 0 and m and int(m.group(1)) == 3, conv.stdout)
+    T.check("they are now 48 kbps mono 24 kHz, under the same names, and about a quarter smaller",
+            all(kbps(p) == (48, 24000, 1) for p in olds[:3])
+            and all(0.70 < os.path.getsize(p) / before[p][0] < 0.80 for p in olds[:3]),
+            [round(os.path.getsize(p) / before[p][0], 2) for p in olds[:3]])
+    T.check("their length is unchanged", all(abs(duration(p)[1] - durations[p]) < 0.1 for p in olds), [round(duration(p)[1] - durations[p], 3) for p in olds])
+    T.check("the page already at 48 kbps is left alone", (os.path.getsize(olds[3]), os.path.getmtime(olds[3])) == before[olds[3]])
+    T.check("no temporary files are left", not [f for f in os.listdir(old) if not f.endswith(".mp3")], os.listdir(old))
+    again = run("--convert")
+    m = re.search(r"re-encoded: (\d+)", again.stdout)
+    T.check("running it again is safe: nothing left to do", again.returncode == 0 and m and int(m.group(1)) == 0, again.stdout)
+    import shutil
+    shutil.rmtree(old, ignore_errors=True)
 finally:
     fake.hook = None
     n, files = helpers.cleanup()

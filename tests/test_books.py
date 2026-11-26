@@ -115,11 +115,22 @@ try:
             and mj["pages"] == 3 and len(mj["texts"]) == 3 and mj["voice"] == "bf_emma"
             and [f["url"] for f in mj["files"] if f["kind"] == "audio"] == [f"/audio/{book_id}/{i}?voice=bf_emma" for i in range(3)]
             and mj["files"][0]["url"] == f"/cover/{book_id}", {k: mj[k] for k in ("pages", "voice")} if mj else m.status_code)
-    T.check("manifest and size are never cached", m.headers.get("Cache-Control") == "no-store"
-            and a.get(f"/offline/size/{book_id}").headers.get("Cache-Control") == "no-store")
+    T.check("manifest: real size of each page's text, and a total that adds up", len(mj["text_bytes"]) == 3
+            and mj["text_bytes"] == [len(t.encode()) for t in mj["texts"]]
+            and mj["bytes"] == sum(f["bytes"] or 0 for f in mj["files"]) + sum(mj["text_bytes"]), mj["text_bytes"])
+    real = {f["url"]: len(a.get(f["url"]).get_data()) for f in mj["files"] if f["bytes"] is not None}
+    T.check("manifest: every file's size is what the server really sends (audio, cover, artwork)",
+            real and all(real[f["url"]] == f["bytes"] for f in mj["files"] if f["bytes"] is not None),
+            {u: n for u, n in real.items() if n != next(f["bytes"] for f in mj["files"] if f["url"] == u)})
+    sizes = a.get(f"/offline/manifest/{book_id}?texts=0")
+    sj = sizes.get_json()
+    T.check("?texts=0: the same sizes without the text (for the confirm sheet)", "texts" not in sj
+            and sj["text_bytes"] == mj["text_bytes"] and sj["files"] == mj["files"] and sj["bytes"] == mj["bytes"])
+    T.check("the manifest is never cached", m.headers.get("Cache-Control") == "no-store"
+            and sizes.headers.get("Cache-Control") == "no-store")
     busy_id, _ = helpers.add_book(a_id, "Busy", 2, status="processing")
     T.check("a book still processing can't be downloaded yet (409)", a.get(f"/offline/manifest/{busy_id}").status_code == 409
-            and a.get(f"/offline/size/{busy_id}").get_json()["ready"] is False)
+            and a.get(f"/offline/manifest/{busy_id}?texts=0").status_code == 409)
     ob = a.get("/offline/books").get_json()
     T.check("/offline/books lists the user's book ids", ob["user"] == a_id and book_id in ob["books"] and busy_id in ob["books"], ob)
     T.check("/offline/csrf gives a token that works", a.post("/save_progress", json={"book_id": book_id, "page": 2, "speed": 1.25,
@@ -159,7 +170,7 @@ try:
     t = meta_token(b)
     gets = [f"/read/{book_id}", f"/player/{book_id}", f"/audio/{book_id}/0", f"/cover/{book_id}", f"/cover/{book_id}?size=96",
             f"/toc/{book_id}", f"/status/{book_id}", f"/readiness/{book_id}", f"/page_text/{book_id}/0",
-            f"/offline/manifest/{book_id}", f"/offline/size/{book_id}"]
+            f"/offline/manifest/{book_id}", f"/offline/manifest/{book_id}?texts=0"]
     for u in gets:
         code = b.get(u).status_code
         T.check(f"B GET {u} -> 404", code == 404, code)
