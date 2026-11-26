@@ -118,7 +118,7 @@ The voice is part of audio paths, so the app only accepts the known voices.
 
 ## Audio format and speed
 
-- Pages are MP3, mono, 64 kbps, which is plenty for speech and about 17% of the size of the old WAV files. Code: `app/audio_codec.py`.
+- Pages are MP3, mono, 24 kHz, 48 kbps (`MP3_BITRATE_KBPS` in `app/audio_codec.py`), about 22 MB per hour of speech. Pages made earlier at 64 kbps keep working unchanged: same file names, same `audio/mpeg` type, same routes and cache keys. `reencode_audio.py` re-encodes them to the current bitrate when run with `--convert` (dry run by default; temp file then rename; skips files already at the target).
 - Kokoro's samples are piped into ffmpeg (`subprocess` with an argument list, never a shell string), and the MP3 is written to a temp file and renamed, so a half-written page is never served.
 - The app checks at startup that ffmpeg with the MP3 encoder is installed, and stops with a clear message if not.
 - Audio is generated once per voice, always at speed 1.0. The reader page changes speed in the browser with `audioEl.playbackRate` (with `preservesPitch`), so changing speed never fetches or generates new audio. The chosen speed is kept between pages and saved in `progress.speed`, which only accepts the five speeds the reader offers (0.75, 1.0, 1.25, 1.5, 2.0).
@@ -163,8 +163,7 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/save_progress`                  | save page, speed, voice (POST, JSON with `book_id`) |
 | `/delete/<book_id>`               | delete a book and all its files (POST)   |
 | `/downloads`                      | Downloads screen (drawn from the device) |
-| `/offline/manifest/<book_id>`     | everything to download one finished book (409 while processing) |
-| `/offline/size/<book_id>`         | quick size estimate for the confirm step and the suggestion |
+| `/offline/manifest/<book_id>`     | everything to download one finished book, with the real size of every file and page (409 while processing); `?texts=0` leaves out the text for the confirm sheet and the suggestion |
 | `/offline/books`                  | the user's book ids (to drop downloads of deleted books) |
 | `/offline/csrf`                   | a fresh CSRF token for syncing progress saved offline |
 
@@ -206,15 +205,16 @@ The worker only reads the media caches; `offline.js` is the only thing that writ
 
 ### Downloading a book
 
-1. The card menu and the player's More sheet have "Download for offline", enabled only when the book's status is `ready` and the device is online. The confirm step shows `/offline/size` (exact audio sizes plus a guess for covers and text) and says only the current voice is downloaded.
-2. `navigator.storage.persist()` is requested, and `navigator.storage.estimate()` must show room for the book (plus a margin), or a clear message is shown instead.
+1. The card menu and the player's More sheet have "Download for offline", enabled only when the book's status is `ready` and the device is online. The confirm sheet loads `/offline/manifest/<id>?texts=0` (real sizes of every page's audio and text and of the artwork) and offers three choices: **chapters** (each with its page range and size; the default is the chapter the listener is on and the next two), the **whole book**, or a **page range**. A running total and the button show the real size of what is new. Chapters come from the contents, each running to the next entry; pages before the first entry are "Beginning", and a PDF without real chapter titles gets blocks of 10 pages. It says only the current voice is downloaded.
+2. `navigator.storage.persist()` is requested, and `navigator.storage.estimate()` must show room for the selection (plus a margin), or a clear message is shown instead.
 3. `/offline/manifest/<id>` gives the title, author, genre, page count, contents, cover URL, every page's text, and for the user's current voice the URL and byte size of every page's audio, the cover and the three lock-screen artwork sizes.
-4. Files are fetched one at a time into `waudible-media-u<user id>`, under the same URLs the player uses, and each one's size must match the manifest. A progress ring shows on the cover and in the sheet, and the download can be cancelled (which removes what was saved). If it stops part way (connection lost, app closed), the next online visit carries on, skipping files already saved.
-5. IndexedDB `waudible` holds, keyed by `[user id, book id]`: `books` (details, contents, page text, file list, size, voice, complete or not) and `progress` (page, speed, voice, time, synced or not); `meta` holds the signed-in user for the offline page.
+4. The artwork (once per book) and the audio of the chosen pages are fetched one at a time into `waudible-media-u<user id>`, under the same URLs the player uses, and each one's size must match the manifest. A progress ring shows on the cover and in the sheet. Cancelling removes only what that download added. If it stops part way (connection lost, app closed), the next online visit carries on with the pages still pending, skipping files already saved.
+5. IndexedDB `waudible` holds, keyed by `[user id, book id]`: `books` (details, contents, file list with sizes, the text of downloaded pages, `have` (pages whose audio is here), `pending` (pages still to fetch), whether the artwork is here, voice) and `progress` (page, speed, voice, time, synced or not); `meta` holds the signed-in user for the offline page. Records from before chapter downloads (always whole books) are read as `have` = every page.
+6. More chapters can be added later from Downloads (the sheet shows chapters already here as ticked and locked), and single chapters can be deleted there, which removes their audio from the cache and their text from the record. Deleting the last pages deletes the book's record.
 
 ### Playing
 
-`Player.open` uses a complete downloaded copy when there is one, online too (it saves data). With no network the details, contents and page text come from IndexedDB, and the audio and artwork from the cache through the worker, so the mini player, Media Session, speed, sleep timer and contents drawer work as usual. Offline, the voice picker is disabled with a note, Add and Delete explain that they need a connection, books that aren't downloaded are dimmed, and opening one shows a short message instead of an error. An Offline badge shows in the header.
+`Player.open` uses a downloaded copy of the whole book when there is one, online too (it saves data). Online, a copy with only some chapters plays like any other book; its downloaded pages still come from the cache through the worker. Offline, a partial copy plays its pages and nothing else: previous and next (and the lock-screen buttons) skip to the nearest page that is here, the end of a downloaded run stops with "End of the downloaded pages" and a message naming the next missing page, the contents drawer marks chapters with no pages here as not downloaded (choosing one explains instead of playing), and Jump to page explains when the page isn't here. The saved position moves to the nearest downloaded page when needed. With no network the details, contents and page text come from IndexedDB, and the audio and artwork from the cache through the worker, so the mini player, Media Session, speed, sleep timer and contents drawer work as usual. Offline, the voice picker is disabled with a note, Add and Delete explain that they need a connection, books that aren't downloaded are dimmed, and opening one shows a short message instead of an error. An Offline badge shows in the header.
 
 ### Progress
 
@@ -222,7 +222,7 @@ Every save goes to IndexedDB first, then to `/save_progress`. A save that can't 
 
 ### The suggestion
 
-When a ready book that isn't downloaded is opened online, a sheet offers to download it: "Download for offline listening? About X MB. Streaming uses data and stops when your connection drops." Download, Not now (asks again after a week), or Don't ask again for this book, remembered in `localStorage` per user and book. It isn't shown while the book is processing, when there isn't room, when the book is already on the device, or more than once per visit.
+When a ready book that has nothing downloaded is opened online, a sheet offers to download part of it: "Download a few chapters for offline listening? About X MB for this chapter and the next two. Streaming uses data and stops when your connection drops." Download fetches the chapter being played and the next two. Download, Not now (asks again after a week), or Don't ask again for this book, remembered in `localStorage` per user and book. It isn't shown while the book is processing, when there isn't room, when the book is already on the device, or more than once per visit.
 
 ### Cleanup and accounts
 

@@ -750,20 +750,33 @@ def offline_csrf():
     return _no_store(jsonify({"token": generate_csrf()}))
 
 
+# Artwork is made by ffmpeg on every request, so its sizes are kept per
+# book (and cover) for the confirm sheet, which asks often
+_artwork_sizes: dict = {}
+
+
 def _artwork_files(book: Book) -> list[dict]:
-    """The cover the player shows and the three lock-screen sizes."""
-    files = []
+    """The cover the player shows and the three lock-screen sizes, with
+    the real size of each file as /cover sends it."""
     has_cover = bool(book.cover) and os.path.exists(cover_path(book.cover))
+    key = (book.id, book.cover, book.title)
+    if key not in _artwork_sizes:
+        sizes = {}
+        for size in ARTWORK_SIZES:
+            try:
+                png = cover_artwork(cover_path(book.cover), size) if has_cover else None
+            except Exception:
+                png = None
+            sizes[size] = len(png or fallback_artwork(book.title, size))
+        if len(_artwork_sizes) > 200:
+            _artwork_sizes.clear()
+        _artwork_sizes[key] = sizes
+    files = []
     if has_cover:
         files.append({"url": f"/cover/{book.id}", "bytes": os.path.getsize(cover_path(book.cover)),
                       "kind": "cover"})
-    for size in ARTWORK_SIZES:
-        try:
-            png = cover_artwork(cover_path(book.cover), size) if has_cover else None
-        except Exception:
-            png = None
-        png = png or fallback_artwork(book.title, size)
-        files.append({"url": f"/cover/{book.id}?size={size}", "bytes": len(png), "kind": "artwork"})
+    for size, length in _artwork_sizes[key].items():
+        files.append({"url": f"/cover/{book.id}?size={size}", "bytes": length, "kind": "artwork"})
     return files
 
 
@@ -771,7 +784,8 @@ def _audio_files(book: Book, voice: str) -> list[dict]:
     files = []
     for page in range(book.pages):
         path = get_audio_path(book.storage_key, page, voice)
-        # Missing for this voice: made on demand when downloaded
+        # Missing for this voice: made on demand when downloaded, so its
+        # size is only known then (bytes is null)
         files.append({"url": f"/audio/{book.id}/{page}?voice={voice}",
                       "bytes": os.path.getsize(path) if path else None, "page": page, "kind": "audio"})
     return files
@@ -782,38 +796,35 @@ def _offline_voice(book: Book) -> str:
     return voice if voice in VOICES else "af_heart"
 
 
-TEXT_BYTES_GUESS = 2000     # per page, for the estimate only
+# Page text per book, kept for a few books (the confirm sheet needs every
+# page's size, and reading a long PDF takes a moment)
+_page_texts: dict = {}
 
 
-@app.route('/offline/size/<int:book_id>')
-def offline_size(book_id):
-    """Quick estimate for the confirm step and the download suggestion
-    (audio sizes are exact, covers and text are guessed)."""
-    book  = _get_book(book_id)
-    voice = _offline_voice(book)
-    audio = _audio_files(book, voice)
-    known = [f["bytes"] for f in audio if f["bytes"] is not None]
-    average = sum(known) / len(known) if known else 240_000
-    total = sum(known) + average * (len(audio) - len(known)) + book.pages * TEXT_BYTES_GUESS + 150_000
-    if book.cover and os.path.exists(cover_path(book.cover)):
-        total += os.path.getsize(cover_path(book.cover))
-    return _no_store(jsonify({"bytes": int(total), "voice": voice, "pages": book.pages,
-                              "ready": book.status == "ready"}))
+def _texts(book: Book) -> list[str]:
+    key = book.storage_key
+    if key not in _page_texts:
+        if len(_page_texts) >= 8:
+            _page_texts.pop(next(iter(_page_texts)))
+        _page_texts[key] = extract_pages(pdf_path(key))
+    return _page_texts[key]
 
 
 @app.route('/offline/manifest/<int:book_id>')
 def offline_manifest(book_id):
     """Everything needed to play one finished book with no network: details,
-    contents, page text, and the URL and size of every file, for the
-    voice the user listens with."""
+    contents, page text, and the URL and real size of every file, for the
+    voice the user listens with. ?texts=0 leaves out the text itself (the
+    confirm sheet and the download suggestion only need the sizes)."""
     book = _get_book(book_id)
     if book.status != "ready":
         return _no_store(jsonify({"error": "This book is still being prepared."})), 409
     voice = _offline_voice(book)
     progress = book.progress
-    texts = extract_pages(pdf_path(book.storage_key))
+    texts = _texts(book)
     files = _artwork_files(book) + _audio_files(book, voice)
-    return _no_store(jsonify({
+    text_bytes = [len(t.encode()) for t in texts]
+    data = {
         "id"    : book.id,
         "title" : book.title,
         "author": book.author or "",
@@ -822,13 +833,16 @@ def offline_manifest(book_id):
         "voice" : voice,
         "cover" : f"/cover/{book.id}" if book.cover else f"/cover/{book.id}?size=512",
         "toc"   : extract_toc(pdf_path(book.storage_key)),
-        "texts" : texts,
         "files" : files,
+        "text_bytes": text_bytes,
         # Where the listener is now, the starting point on this device
         "progress": {"page": progress.current_page, "speed": progress.speed,
                      "at": _ms(progress.updated_at) if progress.updated_at else 0} if progress else None,
-        "bytes" : sum(f["bytes"] or 0 for f in files) + sum(len(t.encode()) for t in texts),
-    }))
+        "bytes" : sum(f["bytes"] or 0 for f in files) + sum(text_bytes),
+    }
+    if request.args.get("texts") != "0":
+        data["texts"] = texts
+    return _no_store(jsonify(data))
 
 
 if __name__ == '__main__':

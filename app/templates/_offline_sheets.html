@@ -12,13 +12,26 @@
     <p class="dl-book" id="dl-book"></p>
 
     <div class="dl-state" id="dl-confirm" hidden>
-        <p class="confirm-text">About <strong id="dl-size">...</strong> on this device.</p>
+        <p class="dl-have" id="dl-have" hidden></p>
+        <div class="dl-modes" role="radiogroup" aria-label="What to download">
+            <button type="button" class="dl-mode" role="radio" data-mode="chapters" aria-checked="true">Chapters</button>
+            <button type="button" class="dl-mode" role="radio" data-mode="all" aria-checked="false">Whole book</button>
+            <button type="button" class="dl-mode" role="radio" data-mode="range" aria-checked="false">Pages</button>
+        </div>
+        <div class="dl-chapters" id="dl-chapters" role="group" aria-label="Chapters"></div>
+        <div class="dl-range" id="dl-range" hidden>
+            <label class="dl-range-field">From page <input type="number" id="dl-from" class="field" min="1" inputmode="numeric"></label>
+            <label class="dl-range-field">to <input type="number" id="dl-to" class="field" min="1" inputmode="numeric"></label>
+        </div>
+        <p class="dl-all-note" id="dl-all-note" hidden></p>
+        <p class="dl-total" id="dl-total" role="status" aria-live="polite"></p>
         <p class="dl-note" id="dl-voice-note"></p>
         <p class="field-error" id="dl-error" role="alert"></p>
         <div class="confirm-actions">
             <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Cancel</button>
             <button type="button" class="btn btn-primary btn-pill" id="dl-start">Download</button>
         </div>
+        <button type="button" class="btn-text dl-remove" id="dl-remove" hidden>Remove this book from the device</button>
     </div>
 
     <div class="dl-state" id="dl-progress" hidden>
@@ -32,24 +45,16 @@
             <button type="button" class="btn btn-danger-solid btn-pill" id="dl-cancel">Cancel download</button>
         </div>
     </div>
-
-    <div class="dl-state" id="dl-done" hidden>
-        <p class="confirm-text" id="dl-done-text"></p>
-        <div class="confirm-actions">
-            <button type="button" class="btn btn-ghost btn-pill" data-sheet-close>Close</button>
-            <button type="button" class="btn btn-danger-solid btn-pill" id="dl-remove">Remove download</button>
-        </div>
-    </div>
 </div>
 
 <!-- ── SUGGESTION: download instead of streaming ── -->
 <div class="sheet sheet-over-player" id="ask-sheet" role="dialog" aria-modal="true" aria-labelledby="ask-title" aria-hidden="true">
     <div class="sheet-handle-area"><div class="sheet-handle"></div></div>
     <div class="sheet-head">
-        <h2 class="sheet-title" id="ask-title">Download for offline listening?</h2>
+        <h2 class="sheet-title" id="ask-title">Download a few chapters for offline listening?</h2>
         <button type="button" class="icon-btn" data-sheet-close aria-label="Close">{{ icon("close", 22) }}</button>
     </div>
-    <p class="confirm-text">About <strong id="ask-size"></strong>. Streaming uses data and stops when your connection drops.</p>
+    <p class="confirm-text">About <strong id="ask-size"></strong> for <span id="ask-what">this chapter and the next two</span>. Streaming uses data and stops when your connection drops.</p>
     <div class="ask-actions">
         <button type="button" class="btn btn-primary btn-pill btn-block" id="ask-download" data-autofocus>{{ icon("download", 20) }} Download</button>
         <button type="button" class="btn btn-ghost btn-pill btn-block" id="ask-later">Not now</button>

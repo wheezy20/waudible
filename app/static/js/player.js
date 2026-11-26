@@ -94,6 +94,9 @@
             } catch (e) { data = null; }      // no network after all: the downloaded copy, if any
         }
         if (token !== openToken) return;     // another book opened, or the player was cleared
+        // Online, a copy with only some chapters plays like any other book
+        // (its downloaded pages still come from the device)
+        if (local && data && local.have.length < local.pages) local = null;
         if (local) data = await Offline.playerData(local, data);
         if (token !== openToken) return;
         pendingId = null;
@@ -119,7 +122,7 @@
         readyPages  = new Set();
         tocChapters = [];
         preloadedKey = null;
-        if (data.local) readyPages = allPages();
+        if (data.local) readyPages = new Set(data.local.have);
 
         $('player-title').textContent  = data.title;
         $('player-author').textContent = data.author;
@@ -155,9 +158,29 @@
         }, 5000);
     }
 
-    const allPages = () => new Set(Array.from({ length: book ? book.pages : 0 }, (_, i) => i));
-    // Playing from the downloaded copy (its voice, on this device)
+    // Playing from the downloaded copy (its voice, on this device). A copy
+    // can hold the whole book or only some chapters.
     const fromDevice = () => !!(book && book.local && voiceEl.value === book.local.voice);
+    const pagesHere  = () => new Set(book && book.local ? book.local.have : []);
+    const isHere     = page => !book || !book.local || book.local.have.includes(page);
+    const partial    = () => !!(book && book.local && book.local.have.length < book.pages);
+
+    // The page to go to from the current one: the next (or previous) one,
+    // or for a downloaded copy the nearest page that is on the device
+    function neighbour(dir) {
+        if (!book) return null;
+        if (!book.local) {
+            const p = currentPage + dir;
+            return p >= 0 && p < book.pages ? p : null;
+        }
+        const have = book.local.have;
+        const p = dir > 0 ? have.find(x => x > currentPage) : [...have].reverse().find(x => x < currentPage);
+        return p === undefined ? null : p;
+    }
+
+    function notHere(page) {
+        App.toast(`Page ${page + 1} isn't downloaded. Connect to the internet to listen to it, or add it in Library, Downloads.`);
+    }
 
     // "Download for offline" in the More sheet acts on this book
     function updateDownloadAction() {
@@ -178,7 +201,7 @@
         const note = $('voice-note');
         if (off && book && book.local && voiceEl.value !== book.local.voice) {
             voiceEl.value = book.local.voice;
-            readyPages = allPages();
+            readyPages = pagesHere();
             updateTocReadiness();
         }
         voiceEl.disabled = off;
@@ -219,11 +242,12 @@
     // ── LOAD PAGE ──
     function loadPage(page, autoplay = true) {
         if (!book || page < 0 || page >= book.pages) return;
+        if (!isHere(page)) { notHere(page); return; }
         currentPage = page;
         pageNumEl.textContent = currentPage + 1;
         $('text-page').textContent = currentPage + 1;
-        $('btn-prev').disabled = currentPage === 0;
-        $('btn-next').disabled = currentPage === book.pages - 1;
+        $('btn-prev').disabled = neighbour(-1) === null;
+        $('btn-next').disabled = neighbour(1) === null;
 
         highlightTocItem(currentPage);
         updateSubtitle();
@@ -246,13 +270,26 @@
         saveProgress();
     }
 
-    function changePage(dir) { loadPage(currentPage + dir); }
+    // Previous and next page; a downloaded copy skips pages that aren't here
+    function changePage(dir) {
+        const next = neighbour(dir);
+        if (next === null) {
+            if (partial()) App.toast(dir > 0 ? 'There are no downloaded pages after this one.'
+                                             : 'There are no downloaded pages before this one.');
+            return;
+        }
+        loadPage(next);
+    }
 
     function jumpToPage() {
         const errEl = $('jump-error');
         const val = parseInt($('jump-input').value);
         if (!book || isNaN(val) || val < 1 || val > book.pages) {
             errEl.textContent = `Enter a page from 1 to ${book ? book.pages : 1}.`;
+            return;
+        }
+        if (!isHere(val - 1)) {
+            errEl.textContent = `Page ${val} isn't downloaded, so it can't play without a connection. Add it in Library, Downloads when you're online.`;
             return;
         }
         errEl.textContent = '';
@@ -280,7 +317,12 @@
             setPlaybackState('paused');
             return;
         }
-        if (currentPage + 1 < book.pages) {
+        if (currentPage + 1 < book.pages && !isHere(currentPage + 1)) {
+            // A downloaded copy with a gap: stop at the end of what is here
+            setStatus('End of the downloaded pages');
+            App.toast(`That's the end of the downloaded pages. Page ${currentPage + 2} isn't on this device.`);
+            setPlaybackState('paused');
+        } else if (currentPage + 1 < book.pages) {
             // New src and play() inside the ended handler, so the
             // browser keeps the playback session (and lock screen) alive
             changePage(1);
@@ -295,7 +337,7 @@
     $('jump-go').addEventListener('click', jumpToPage);
     $('jump-input').addEventListener('keydown', e => { if (e.key === 'Enter') jumpToPage(); });
     voiceEl.addEventListener('change', () => {
-        readyPages = fromDevice() ? allPages() : new Set();
+        readyPages = fromDevice() ? pagesHere() : new Set();
         syncNetworkUi();
         updateTocReadiness();
         loadPage(currentPage);
@@ -430,7 +472,7 @@
     async function fetchPageText(page) {
         const id = book.id;
         if (book.local) {
-            textBoxEl.textContent = book.local.texts[page] || "[No text on this page]";
+            textBoxEl.textContent = book.local.texts[page] || (isHere(page) ? "[No text on this page]" : "[Not downloaded]");
             $('text-preview').textContent = textBoxEl.textContent;
             return;
         }
@@ -477,11 +519,16 @@
             return;
         }
 
+        // Where each entry ends, for copies that hold only some pages
+        const starts = [...new Set(chapters.map(c => c.page))].sort((a, b) => a - b);
+        const endOf = page => { const n = starts.find(p => p > page); return (n === undefined ? book.pages : n) - 1; };
+
         chapters.forEach(ch => {
             const item = document.createElement('button');
             item.type       = 'button';
             item.className  = 'toc-item' + (ch.level === 2 ? ' toc-sub' : '');
             item.dataset.page = ch.page;
+            item.dataset.end  = endOf(ch.page);
             item.id         = 'toc-' + ch.page;
 
             const dot   = document.createElement('span');
@@ -497,7 +544,14 @@
             pg.textContent = 'p.' + (ch.page + 1);
 
             item.append(dot, label, pg);
-            item.onclick = () => { loadPage(ch.page); closeToc(); };
+            item.onclick = () => {
+                // A downloaded copy plays the first page of the chapter that is here
+                const target = book && book.local
+                    ? book.local.have.find(p => p >= ch.page && p <= endOf(ch.page)) : ch.page;
+                if (target === undefined) { notHere(ch.page); return; }
+                loadPage(target);
+                closeToc();
+            };
             tocList.appendChild(item);
         });
 
@@ -511,7 +565,7 @@
         if (!book) return;
         const id = book.id;
         if (fromDevice()) {
-            readyPages = allPages();
+            readyPages = pagesHere();
         } else if (!Offline.isOnline()) {
             return;
         } else {
@@ -521,10 +575,19 @@
                 readyPages = new Set(data.ready);
             } catch (e) { return; }
         }
-        document.querySelectorAll('.toc-dot').forEach(dot => {
-            const page = parseInt(dot.id.replace('dot-', ''));
-            dot.classList.toggle('dot-ready',      readyPages.has(page));
-            dot.classList.toggle('dot-processing', !readyPages.has(page));
+        const local = !!(book.local && fromDevice());
+        $('legend-missing').textContent = local ? 'Not downloaded' : 'Not ready yet';
+        document.querySelectorAll('.toc-item').forEach(item => {
+            const page = parseInt(item.dataset.page), end = parseInt(item.dataset.end);
+            const dot = item.querySelector('.toc-dot');
+            // A downloaded copy: ready when any page of the chapter is here
+            let ready = readyPages.has(page);
+            if (local) { ready = false; for (let p = page; p <= end; p++) if (readyPages.has(p)) { ready = true; break; } }
+            dot.classList.toggle('dot-ready',      ready);
+            dot.classList.toggle('dot-processing', !ready);
+            item.classList.toggle('toc-unavailable', local && !ready);
+            if (local && !ready) item.setAttribute('aria-description', 'Not downloaded');
+            else item.removeAttribute('aria-description');
         });
     }
 
@@ -804,6 +867,7 @@
         open, clear, forget,
         expand: expandSheet, collapse: collapseSheet, isExpanded,
         bookId: () => (book ? book.id : null),
+        currentPage: () => currentPage,
         fromDevice,
     };
     window.changePage = changePage;

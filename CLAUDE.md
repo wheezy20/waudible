@@ -27,7 +27,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 
 - `app/main.py`: Flask config and routes (login required everywhere except login and register, books looked up by id and owner)
 - `app/tts_engine.py`: loads Kokoro once, generates page audio (MP3, speed 1.0, one file per voice; silence for empty pages, long pages in chunks), allowed voices and speeds
-- `app/audio_codec.py`: ffmpeg MP3 encoding and the startup ffmpeg check
+- `app/audio_codec.py`: ffmpeg MP3 encoding (`MP3_BITRATE_KBPS`, 48) and the startup ffmpeg check
 - `app/request_log.py`: slow request warnings (over 3 s, route pattern only) and database connect error logging
 - `app/limiter.py`: Flask-Limiter setup and the limits for login, sign-up and uploads
 - `app/templates/error.html`: friendly error pages
@@ -41,6 +41,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/auth.py`: `auth` blueprint (`/register`, `/login`, `/logout`), Flask-Login setup, forms
 - `app/models.py`: Flask-SQLAlchemy models (`User`, `Book`, `Progress`) and the shared `db` object
 - `init_db.py`: creates the `users`, `books` and `progress` tables (`python init_db.py`, safe to rerun)
+- `reencode_audio.py`: one-off re-encode of existing page audio to `MP3_BITRATE_KBPS` (dry run unless `--convert`)
 - `app/templates/base.html`: page shell (player, mini player, sheets, nav); `fragment.html` is the content-only layout for htmx swaps; `_player.html`, `_cards.html`, `_icons.html` are partials
 - `app/static/js/player.js` (persistent player, set up once), `app.js` (page scripts after each swap), `sheets.js` (bottom sheets), `offline.js` (downloads, IndexedDB, progress sync, Downloads and offline page), `signed-out.js` (login pages tell the service worker nobody is signed in), `htmx.min.js` (htmx 2.0.11, self-hosted)
 - `app/sw.js`: the service worker, served at `/sw.js` with a version the app fills in; never caches pages or JSON, serves downloaded media per user with Range support
