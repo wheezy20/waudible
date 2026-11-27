@@ -8,6 +8,7 @@ from helpers import fake, upload, login, meta_token
 
 from app import tts_engine, worker
 from app.main import app, MAX_BOOKS
+from app import main as main_module
 from app.limiter import limiter
 from app.models import db, Book, Progress
 from app.storage import pdf_path, cover_path, audio_dir, BOOKS_DIR, COVERS_DIR, AUDIO_DIR
@@ -231,6 +232,65 @@ try:
             f"/voice/status/{book_id}?voice=am_echo&page=9", f"/voice/status/{book_id}?voice=am_echo")] == [400] * 3)
     T.check("POST /voice/prepare needs the CSRF token", a.post("/voice/prepare", json={"book_id": book_id, "voice": "am_echo",
             "page": 0}).status_code == 400)
+
+    T.section("Page audio: no database round trips once the owner check is known")
+    from sqlalchemy import event as sa_event
+    from sqlalchemy.engine import Engine
+    from app import media_cache
+    queries = []
+    count = lambda *args: queries.append(args[2])
+    sa_event.listen(Engine, "before_cursor_execute", count)
+    try:
+        media_cache.clear()
+        queries.clear()
+        first = a.get(f"/audio/{book_id}/0")
+        n_first = len(queries)
+        queries.clear()
+        again = [a.get(f"/audio/{book_id}/{p}") for p in (0, 1, 2, 0)]
+        T.check("the first request checks the user and the owner in the database", first.status_code == 200 and n_first >= 2, n_first)
+        T.check("the next ones send the page with no database query at all", all(r.status_code == 200 for r in again)
+                and len(queries) == 0, len(queries))
+        T.check("and the same bytes", again[3].get_data() == first.get_data())
+        queries.clear()
+        T.check("other routes still look the user up every time", a.get(f"/player/{book_id}").status_code == 200
+                and any("from users" in q.lower() for q in queries))
+    finally:
+        sa_event.remove(Engine, "before_cursor_execute", count)
+    b_tmp = helpers.HttpsClient(app)
+    login(b_tmp, "books_b", PW)
+    T.check("another user still gets 404, even with the owner's lookup remembered", b_tmp.get(f"/audio/{book_id}/0").status_code == 404)
+    T.check("logged out still goes to the login page", anon.get(f"/audio/{book_id}/0").status_code == 302)
+    T.check("a page out of range is still refused", a.get(f"/audio/{book_id}/99").status_code == 400)
+    # A book deleted while its lookup is remembered is refused at once
+    gone_id, gone_key = helpers.add_book(a_id, "Gone Soon", 2, ready_pages=2)
+    T.check("a second book plays", a.get(f"/audio/{gone_id}/0").status_code == 200)
+    T.check("deleting it", a.post(f"/delete/{gone_id}", data={"csrf_token": meta_token(a)}).status_code == 302)
+    T.check("its audio is 404 straight away", a.get(f"/audio/{gone_id}/0").status_code == 404)
+    gone2_id, gone2_key = helpers.add_book(a_id, "Gone Behind", 2, ready_pages=2)
+    a.get(f"/audio/{gone2_id}/0")
+    from app.tts_engine import delete_book_audio
+    delete_book_audio(gone2_key)          # deleted elsewhere, the remembered lookup not yet forgotten
+    T.check("audio of a book whose files are being deleted is 404 even if remembered", a.get(f"/audio/{gone2_id}/0").status_code == 404)
+    lo = helpers.HttpsClient(app)
+    login(lo, "books_a", PW)
+    lo.get(f"/audio/{book_id}/0")
+    lo.post("/logout", data={"csrf_token": meta_token(lo)})
+    T.check("after logging out the same browser is sent to login", lo.get(f"/audio/{book_id}/0").status_code == 302)
+    # Making a page on demand takes a while: the database connection goes back first
+    seen = {}
+    real_tta = main_module.text_to_audio
+
+    def slow_tta(*args, **kwargs):
+        seen["checked_out"] = db.engine.pool.checkedout()
+        return real_tta(*args, **kwargs)
+
+    main_module.text_to_audio = slow_tta
+    media_cache.clear()                   # so this request does query the database first
+    try:
+        r = a.get(f"/audio/{book_id}/1?voice=am_adam")
+    finally:
+        main_module.text_to_audio = real_tta
+    T.check("while a page is made on demand, no database connection is held", r.status_code == 200 and seen.get("checked_out") == 0, seen)
 
     T.section("Privacy: user B asks for user A's book")
     login(b, "books_b", PW)

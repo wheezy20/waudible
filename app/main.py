@@ -10,7 +10,7 @@ from flask_login import current_user
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 from app.pdf_reader import extract_page, extract_pages, get_book_info, extract_toc
-from app.tts_engine import (text_to_audio, get_audio_path,
+from app.tts_engine import (text_to_audio, get_audio_path, is_cancelled,
                             delete_book_audio, VOICES, VOICE_LABELS, SPEEDS)
 from app.storage import (new_storage_key, pdf_path, cover_path,
                          remove_book_files)
@@ -20,7 +20,7 @@ from app.config import database_url
 from app.models import db, Book, Progress
 from app.auth import auth, login_manager
 from app.limiter import limiter, UPLOAD_LIMIT, EXPORT_LIMIT, EXPORT_CHECK_LIMIT
-from app import export
+from app import export, media_cache
 from app.request_log import init_request_logging
 
 app = Flask(__name__)
@@ -263,6 +263,14 @@ def _get_book(book_id: int) -> Book:
     if book is None:
         abort(404)
     return book
+
+
+def _media_book(book_id: int) -> media_cache.MediaBook:
+    """For /audio: the same owner check, remembered for a minute."""
+    hit = media_cache.book(current_user.id, book_id)
+    if hit is not None:
+        return hit
+    return media_cache.remember_book(current_user.id, _get_book(book_id))
 
 
 def _voice(source) -> str:
@@ -536,14 +544,20 @@ def _ms(when: datetime) -> int:
 # ─────────────────────────────────────────
 @app.route('/audio/<int:book_id>/<int:page>')
 def get_audio(book_id, page):
-    book  = _get_book(book_id)
+    book  = _media_book(book_id)
+    if is_cancelled(book.storage_key):       # deleted after it was remembered
+        media_cache.forget_book(book_id)
+        abort(404)
     voice = _voice(request.args)
     if page >= book.pages:
         return jsonify({"error": "Page out of range"}), 400
 
     audio_path = get_audio_path(book.storage_key, page, voice)
     if not audio_path:
-        # Not generated yet: make this one page now
+        # Not generated yet: make this one page now. That can take minutes,
+        # so the database connection goes back first: held that long, Neon's
+        # pooler drops it and the request ends in a 500 after the audio is made.
+        db.session.close()
         text       = extract_page(pdf_path(book.storage_key), page)
         audio_path = text_to_audio(text, book.storage_key,
                                    page=page, voice=voice, book_id=book.id)
@@ -701,6 +715,7 @@ def delete_book(book_id):
     delete_book_audio(storage_key)
     db.session.delete(book)   # progress row goes with it
     db.session.commit()
+    media_cache.forget_book(book_id)
     remove_book_files(storage_key, cover)
 
     return redirect(url_for('index'))
@@ -716,7 +731,7 @@ def delete_book(book_id):
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Precached by the service worker (cache first)
-SHELL_FILES = ["css/style.css", "js/update.js", "js/htmx.min.js", "js/sheets.js", "js/offline.js",
+SHELL_FILES = ["css/style.css", "js/update.js", "js/htmx.min.js", "js/sheets.js", "js/dlstore.js", "js/offline.js",
                "js/player.js", "js/save.js", "js/app.js", "icons/icon-192.png", "icons/icon-512.png",
                "icons/maskable-512.png", "icons/apple-touch-icon.png"]
 FONT_CSS    = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
@@ -969,6 +984,28 @@ def _export_plan(book: Book) -> dict:
     return export.plan(book, toc, voice, first=first, last=last)
 
 
+def _zip_plan(book: Book) -> dict:
+    """Several chapters (chapters=0,2,5 or chapters=all) for one ZIP."""
+    voice = request.args.get('voice') or (book.progress.voice if book.progress else 'af_heart')
+    if voice not in VOICES:
+        raise export.ExportError("Unknown voice.", 400)
+    toc = extract_toc(pdf_path(book.storage_key))
+    chs = export.chapters(toc, book.pages)
+    raw = request.args.get('chapters', '')
+    if raw == 'all':
+        picked = list(range(len(chs)))
+    else:
+        try:
+            picked = sorted({int(x) for x in raw.split(',') if x.strip() != ''})
+        except ValueError:
+            raise export.ExportError("Choose chapters from the list.", 400)
+    if not picked or picked[0] < 0 or picked[-1] >= len(chs):
+        raise export.ExportError("Choose chapters from the list.", 400)
+    infos = [export.plan(book, toc, voice, chapter=i) for i in picked]   # 409 if one isn't ready
+    return {"name": export.zip_name(book.title, [chs[i] for i in picked], len(chs)), "infos": infos,
+            "bytes": sum(i["bytes"] for i in infos), "pages": sum(len(i["pages"]) for i in infos)}
+
+
 def _export_error(e: export.ExportError):
     return _no_store(jsonify({"error": e.message})), e.status
 
@@ -1004,6 +1041,10 @@ def export_info(book_id):
 def export_check(book_id):
     book = _get_book(book_id)
     try:
+        if request.args.get('chapters') is not None:
+            z = _zip_plan(book)
+            return _no_store(jsonify({"name": z["name"], "bytes": z["bytes"], "pages": z["pages"],
+                                      "files": len(z["infos"])}))
         info = _export_plan(book)
     except export.ExportError as e:
         return _export_error(e)
@@ -1021,6 +1062,25 @@ def export_file(book_id):
         return _export_error(e)
     response = send_file(handle, mimetype="audio/mpeg", as_attachment=True,
                          download_name=info["name"], conditional=False, max_age=0)
+    response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["CDN-Cache-Control"] = "no-store"
+    response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+    return response
+
+
+@app.route('/export/<int:book_id>/zip')
+@limiter.limit(EXPORT_LIMIT)
+def export_zip(book_id):
+    """Several chapters as one ZIP of MP3s (stored entries), one download."""
+    book = _get_book(book_id)
+    try:
+        z = _zip_plan(book)
+        handle, size = export.build_zip(book, z["infos"])
+    except export.ExportError as e:
+        return _export_error(e)
+    response = send_file(handle, mimetype="application/zip", as_attachment=True,
+                         download_name=z["name"], conditional=False, max_age=0)
     response.headers["Content-Length"] = str(size)
     response.headers["Cache-Control"] = "no-store"
     response.headers["CDN-Cache-Control"] = "no-store"

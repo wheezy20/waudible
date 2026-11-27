@@ -227,6 +227,39 @@ try:
     T.check("builds left by a crash are removed at startup", leftovers() == [])
     T.check("the slot is free again afterwards", a.get(f"/export/{book_id}/file?chapter=0").status_code == 200)
 
+    T.section("Several chapters as one ZIP")
+    import io
+    import zipfile
+    chk = a.get(f"/export/{book_id}/check?chapters=0,2").get_json()
+    T.check("check: name, size and number of files", chk.get("name") == "Grit The Power of Passion Perseverance - 2 chapters.zip"
+            and chk.get("files") == 2 and chk.get("bytes") == chs[0]["bytes"] + chs[2]["bytes"], chk)
+    T.check("next to each other: Chapters 1 to 2; all of them: All chapters",
+            a.get(f"/export/{book_id}/check?chapters=0,1").get_json()["name"].endswith(" - Chapters 1 to 2.zip")
+            and a.get(f"/export/{book_id}/check?chapters=all").get_json()["name"].endswith(" - All chapters.zip"))
+    r = a.get(f"/export/{book_id}/zip?chapters=all")
+    body = r.get_data()
+    T.check("one ZIP download with its filename, never cached", r.status_code == 200 and r.mimetype == "application/zip"
+            and 'filename="Grit The Power of Passion Perseverance - All chapters.zip"' in r.headers["Content-Disposition"]
+            and r.headers.get("Content-Length") == str(len(body)) and r.headers.get("Cache-Control") == "no-store")
+    z = zipfile.ZipFile(io.BytesIO(body))
+    infos = z.infolist()
+    T.check("one MP3 per chapter, named like a single save", [i.filename for i in infos] == [c["name"] for c in chs], [i.filename for i in infos])
+    T.check("entries are stored, not compressed", all(i.compress_type == zipfile.ZIP_STORED for i in infos))
+    T.check("the ZIP is intact", z.testzip() is None)
+    p = probe(z.read(infos[1].filename))
+    T.check("each entry is the same tagged MP3 with artwork", p["format"]["tags"].get("title") == "Chapter 2: Grit / Growth?"
+            and p["format"]["tags"].get("track") == "2/3" and any(s["disposition"].get("attached_pic") == 1 for s in p["streams"])
+            and abs(float(p["format"]["duration"]) - (page_lengths[2] + page_lengths[3])) < 0.05)
+    T.check("no files left behind after the ZIP", leftovers() == [], leftovers())
+    bad = {q: a.get(f"/export/{book_id}/zip?{q}").status_code for q in ("chapters=", "chapters=3", "chapters=-1", "chapters=x", "chapters=0,9")}
+    T.check("unknown chapters -> 400", set(bad.values()) == {400}, bad)
+    r = a.get(f"/export/{part_id}/zip?chapters=0,1")
+    T.check("a chapter that isn't ready refuses the whole ZIP with the same message", r.status_code == 409
+            and "isn't ready to save yet" in r.get_json()["error"], r.status_code)
+    T.check("another user: 404; logged out: login", b.get(f"/export/{book_id}/zip?chapters=all").status_code == 404
+            and anon.get(f"/export/{book_id}/zip?chapters=all").status_code == 302)
+    T.check("still nothing left behind", leftovers() == [], leftovers())
+
     T.section("Service worker")
     sw = anon.get("/sw.js").get_data(as_text=True)
     T.check("the worker leaves /export/ alone (the browser's own download)", "url.pathname.startsWith('/export/')) return;" in sw)

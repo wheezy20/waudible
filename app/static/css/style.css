@@ -1752,7 +1752,6 @@ body.is-offline [data-sheet-open="add-sheet"] { opacity: 0.45; }
 .dl-chapter.is-unready .dl-chapter-title { color: var(--text-3); }
 .save-bar { height: 6px; margin: 12px 0 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
 .save-bar span { display: block; height: 100%; width: 0; background: var(--orange); transition: width 0.3s; }
-#save-stop[hidden] { display: none; }
 
 /* A save button beside each chapter in the contents drawer */
 .toc-row { display: flex; align-items: center; margin: 0 -12px; }

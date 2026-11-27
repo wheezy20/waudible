@@ -17,6 +17,12 @@
 //   seeking works offline. Only offline.js puts files there.
 // - /export/ (Save to device MP3s) is never touched: the browser's own
 //   download fetches it from the server.
+// - Background Fetch (Chromium): the app hands a book's files to the
+//   browser, which downloads them with the app closed or the screen
+//   locked and shows its own progress notification. When it finishes,
+//   this worker keeps the files exactly as the app's own loop does
+//   (dlstore.js: size checks, the account's cache, the IndexedDB record);
+//   anything that didn't arrive stays pending and resumes later.
 // - Everything else (HTML pages, JSON, form posts) goes to the network
 //   and is never cached.
 // ─────────────────────────────────────────
@@ -27,6 +33,9 @@ const SHELL_URLS = __SHELL_URLS__;
 const FONT_CSS   = __FONT_CSS__;
 const FONT_HOSTS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 const MEDIA      = /^\/(audio|cover)\/\d+(\/\d+)?$/;
+
+// Size checks, the per-account cache and the IndexedDB records, shared with the page
+importScripts(`/static/js/dlstore.js?v=${VERSION}`);
 
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
@@ -170,3 +179,67 @@ async function ranged(response, range) {
         },
     });
 }
+
+// ── BACKGROUND FETCH: a book downloaded by the browser itself ──
+// The id is "waudible:<user id>:<book id>"; the book's IndexedDB record
+// (written by the page before the fetch started) lists every file with
+// its size. A record that is gone (the book was removed, or the account
+// logged out) means the files are not kept.
+const BG_ID = /^waudible:(\d+):(\d+)$/;
+
+async function tellPages(message) {
+    for (const c of await self.clients.matchAll({ includeUncontrolled: true })) c.postMessage(message);
+}
+
+async function finishBackground(event, outcome) {
+    const bg = event.registration;
+    const m = BG_ID.exec(bg.id);
+    if (!m) return;
+    const u = Number(m[1]), id = Number(m[2]);
+    const rec = await DlStore.getBook(u, id).catch(() => null);
+    let stored = 0, failed = 0;
+    if (rec && outcome === 'abort') {
+        // Cancelled (from the notification or the app): as in the app, keep
+        // what was here before and drop what this download was adding
+        const cache = await caches.open(DlStore.cacheName(u));
+        for (const p of rec.pending) {
+            const f = DlStore.audioFile(rec, p);
+            if (f) await cache.delete(f.url);
+            if (rec.texts) rec.texts[p] = null;
+        }
+        rec.pending = [];
+        if (!rec.have.length) {
+            for (const f of rec.files) await cache.delete(f.url);
+            await DlStore.deleteBook(u, id);
+        } else {
+            await DlStore.putBook(DlStore.settle(rec));
+        }
+    } else if (rec) {
+        const cache = await caches.open(DlStore.cacheName(u));
+        for (const r of await bg.matchAll()) {
+            const url = new URL(r.request.url);
+            const f = rec.files.find(x => x.url === url.pathname + url.search);
+            if (!f) continue;
+            try {
+                await DlStore.storeResponse(cache, f, await r.responseReady);
+                DlStore.markStored(rec, f);
+                stored++;
+            } catch (e) { failed++; }     // stays pending: resumes later
+        }
+        if (!rec.art) rec.art = await DlStore.artStored(cache, rec);
+        await DlStore.putBook(DlStore.settle(rec));
+    }
+    if (event.updateUI && rec && outcome !== 'abort') {
+        const title = rec.complete ? `Downloaded "${rec.title}"`
+            : `"${rec.title}": part of it didn't download. It carries on next time you open WAudible.`;
+        try { await event.updateUI({ title }); } catch (e) { /* only allowed once */ }
+    }
+    await tellPages({ type: 'bgfetch', uid: u, book: id, outcome, stored, failed });
+}
+
+self.addEventListener('backgroundfetchsuccess', e => e.waitUntil(finishBackground(e, 'success')));
+self.addEventListener('backgroundfetchfail', e => e.waitUntil(finishBackground(e, 'failure')));
+self.addEventListener('backgroundfetchabort', e => e.waitUntil(finishBackground(e, 'abort')));
+// A tap on the browser's download notification opens the Downloads screen
+self.addEventListener('backgroundfetchclick', e => e.waitUntil(self.clients.openWindow('/downloads')));
+

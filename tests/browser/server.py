@@ -38,7 +38,7 @@ try:
     b2, _ = helpers.add_book(uid, "Mere Christianity", 3, author="C. S. Lewis", genre="Christian", ready_pages=3)
     b3, _ = helpers.add_book(uid, "Delete Me Later", 3, cover_rgb=(110, 40, 60), genre="Christian", ready_pages=3)
     extra = {}
-    if name == "offline_check":
+    if name in ("offline_check", "bgfetch_check"):
         # Finished books to download, and a second account on the same browser
         b4, _ = helpers.add_book(uid, "Offline Story", 4, toc=[[1, "Chapter One", 1], [1, "Chapter Two", 3]],
                                  cover_rgb=(30, 90, 70), author="Ada Writer", genre="Fiction", ready_pages=4)
@@ -80,6 +80,18 @@ try:
             return {"deploy": n, "build": app_main.BUILD}
 
         app.add_url_rule("/__test__/deploy", "test_deploy", deploy)
+    if name == "bgfetch_check":
+        # Page audio arrives slowly, like over the tunnel, so a cancel or a
+        # pause can land while a download is still running
+        import time
+        real_app = app.wsgi_app
+
+        def slow_audio(environ, start_response):
+            if environ.get("PATH_INFO", "").startswith("/audio/"):
+                time.sleep(0.4)
+            return real_app(environ, start_response)
+
+        app.wsgi_app = slow_audio
     upload_pdf = os.path.join(helpers.DATA_DIR, "upload_test.pdf")
     with open(upload_pdf, "wb") as f:
         f.write(helpers.make_pdf(2))

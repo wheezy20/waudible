@@ -16,6 +16,8 @@ run(async browser => {
   const page = await ctx.newPage();
   await page.setViewport({ width: 390, height: 844 });
   await page.evaluateOnNewDocument(RECORDER);
+  // This suite checks the app's own download loop (Safari, Firefox); Background Fetch has bgfetch_check.js
+  await page.evaluateOnNewDocument(() => { window.__waudibleNoBackgroundFetch = true; });
   const errors = watchErrors(page);
   const audioResponses = [];
   page.on('response', r => {

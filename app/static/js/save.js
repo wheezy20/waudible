@@ -6,18 +6,19 @@
 //
 // Each file is checked first (/export/<id>/check), so a problem shows
 // here instead of as a failed download, then saved with a normal link
-// download (/export/<id>/file), which Android's download manager handles
-// and shows in its notifications. Several files go one after another.
+// download (/export/<id>/file, or /export/<id>/zip for several chapters),
+// which Android's download manager handles and shows in its
+// notifications. One request per save, so nothing depends on the page
+// staying open once the download has started.
 // Opened from the book menu, a chapter in the contents drawer, or a
 // chapter on the Downloads screen ([data-save-open]).
 // ─────────────────────────────────────────
 (function () {
     const $ = id => document.getElementById(id);
-    const GAP_MS   = 2500;      // between files, so each build finishes first
     const BUSY_TRIES = 6;
 
     let sheet = null;           // { id, title, page, info, mode, picked, from, to }
-    let run   = null;           // { stop } while files are being saved
+    let run   = null;           // set while a file is being checked
 
     const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     const size = bytes => Offline.size(bytes);
@@ -107,8 +108,12 @@
     function jobs() {
         const info = sheet.info;
         if (sheet.mode === 'chapters') {
-            return info.chapters.filter(c => sheet.picked.has(c.index) && c.ready)
-                .map(c => ({ query: `chapter=${c.index}`, label: c.title, bytes: c.bytes }));
+            const picked = info.chapters.filter(c => sheet.picked.has(c.index) && c.ready);
+            if (picked.length < 2) return picked.map(c => ({ query: `chapter=${c.index}`, label: c.title, bytes: c.bytes }));
+            // Several chapters: one ZIP, one download the phone's download
+            // manager owns, so it carries on with the app in the background
+            return [{ route: 'zip', query: `chapters=${picked.map(c => c.index).join(',')}`, zip: picked.length,
+                      label: `${picked.length} chapters as one ZIP`, bytes: picked.reduce((n, c) => n + c.bytes, 0) }];
         }
         if (sheet.mode === 'whole') {
             return info.whole.ready ? [{ query: 'whole=1', label: 'the whole book', bytes: info.whole.bytes }] : [];
@@ -130,7 +135,10 @@
         const list = jobs(), bytes = list.reduce((n, j) => n + j.bytes, 0);
         const total = $('save-total'), err = $('save-error'), start = $('save-start');
         err.textContent = '';
-        if (list.length) {
+        $('save-zip-note').hidden = !(list.length === 1 && list[0].zip);
+        if (list.length === 1 && list[0].zip) {
+            total.textContent = `${list[0].zip} chapters in one ZIP file, ${size(bytes)}`;
+        } else if (list.length) {
             total.textContent = `${plural(list.length, 'file', 'files')}, ${size(bytes)}`;
         } else if (sheet.mode === 'chapters') {
             total.textContent = info.chapters.some(c => c.ready) ? 'Choose one or more chapters.' : '';
@@ -145,7 +153,7 @@
                 ? `Some of these pages aren't ready in ${v} yet.` : `Enter pages from 1 to ${info.pages}.`;
         }
         $('save-voice-note').textContent = `In ${v}, the voice you listen with.`;
-        start.textContent = list.length > 1 ? `Save ${list.length} files` : 'Save';
+        start.textContent = list.length === 1 && list[0].zip ? 'Save ZIP' : 'Save';
         start.disabled = !list.length;
         total.dataset.files = list.length;
         total.dataset.bytes = bytes;
@@ -184,9 +192,9 @@
         }
     }
 
-    function handOver(id, query) {
+    function handOver(id, job) {
         const a = document.createElement('a');
-        a.href = `/export/${id}/file?${query}`;
+        a.href = `/export/${id}/${job.route || 'file'}?${job.query}`;
         a.download = '';            // the server's filename
         a.hidden = true;
         document.body.append(a);
@@ -194,46 +202,33 @@
         a.remove();
     }
 
+    // Every save is one file (a single chapter, a range, the whole book, or
+    // several chapters in one ZIP): one request the download manager owns
     async function start() {
-        const list = jobs();
-        if (!list.length || run) return;
+        const [job] = jobs();
+        if (!job || run) return;
         const id = sheet.id;
-        run = { stop: false };
+        run = {};
         show('progress');
         $('save-progress-error').textContent = '';
-        $('save-stop').hidden = list.length < 2;
         const text = $('save-progress-text'), fill = $('save-bar-fill');
-        let done = 0;
-        for (const job of list) {
-            if (run.stop) break;
-            text.textContent = list.length > 1 ? `Saving ${done + 1} of ${list.length}: ${job.label}` : `Saving ${job.label}...`;
-            fill.style.width = `${Math.round(100 * done / list.length)}%`;
-            const ok = await check(id, job.query);
-            if (ok.error) {
-                $('save-progress-error').textContent = ok.error;
-                break;
-            }
-            handOver(id, job.query);
-            done++;
-            fill.style.width = `${Math.round(100 * done / list.length)}%`;
-            if (done < list.length) await sleep(GAP_MS);
-        }
-        const stopped = run.stop;
+        text.textContent = `Preparing ${job.label}...`;
+        fill.style.width = '0%';
+        const ok = await check(id, job.query);
         run = null;
-        $('save-stop').hidden = true;
-        if (done === list.length) {
-            text.textContent = list.length > 1
-                ? `All ${list.length} files are on their way to your Downloads folder.`
-                : `${list[0].label.charAt(0).toUpperCase() + list[0].label.slice(1)} is on its way to your Downloads folder.`;
-        } else if (stopped) {
-            text.textContent = `Stopped after ${plural(done, 'file', 'files')}.`;
-        } else {
-            text.textContent = done ? `Saved ${done} of ${list.length} files, then stopped:` : "This couldn't be saved:";
+        if (ok.error) {
+            text.textContent = "This couldn't be saved:";
+            $('save-progress-error').textContent = ok.error;
+            return;
         }
+        handOver(id, job);
+        fill.style.width = '100%';
+        text.textContent = job.zip
+            ? `The ZIP with ${job.zip} chapters is on its way to your Downloads folder. It carries on if you switch apps.`
+            : `${job.label.charAt(0).toUpperCase() + job.label.slice(1)} is on its way to your Downloads folder.`;
     }
 
     $('save-start').addEventListener('click', start);
-    $('save-stop').addEventListener('click', () => { if (run) run.stop = true; });
 
     // ── WHERE IT OPENS FROM ──
     document.addEventListener('click', e => {

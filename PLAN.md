@@ -171,3 +171,13 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Owner only, login required, rate limited; incomplete selections refused with a clear message; one build at a time; no temp files left; the service worker stays out of it
 - [x] Sheet with chapters, sizes and a total, from the book menu, the contents drawer and the Downloads screen; normal link downloads one after another; progress, errors and offline explained
 - [ ] Eyram saves a chapter on the phone and checks it in the Downloads folder, a music player and VLC
+
+## Background downloads and speed
+
+- [x] Measured the audio path: about 0.45 s of database round trips per page request, 0.5 to 0.9 s through Cloudflare and the tunnel, and a server upload of 110 to 200 KB/s (25 to 45 minutes for a 300 MB book); pages made on demand in another voice take about a minute each
+- [x] Background Fetch for offline downloads where the browser has it (Android Chrome, installed app too): carries on with the app closed or the screen locked, stored by the service worker with the same checks, keys and resume
+- [x] Elsewhere: three files at a time, screen Wake Lock, a clean pause in the background ("Paused while the app was in the background") that carries on by itself
+- [x] `/audio` remembers the user and owner check for a minute (no database query on repeat requests) and lets go of the database while a page is made
+- [x] Save to device: several chapters as one ZIP (stored entries), one download that survives backgrounding
+- [ ] Eyram checks a background download on the phone with the app closed and the screen locked
+- [ ] Faster uploads would need a host with a better upload link than the home connection (the main limit on download speed)
