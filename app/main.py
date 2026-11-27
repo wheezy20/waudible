@@ -14,7 +14,7 @@ from app.tts_engine import (text_to_audio, get_audio_path,
 from app.storage import (new_storage_key, pdf_path, cover_path,
                          remove_book_files)
 from app.artwork import ARTWORK_SIZES, cover_artwork, fallback_artwork
-from app.worker import enqueue, start_worker
+from app.worker import enqueue, enqueue_voice, voice_state, start_worker, VOICE_AHEAD
 from app.config import database_url
 from app.models import db, Book, Progress
 from app.auth import auth, login_manager
@@ -165,6 +165,21 @@ CSP = "; ".join([
 
 
 @app.after_request
+def build_headers(response):
+    """Every response says which build made it (the page's update check
+    reads it). Static files with the current ?v= never change, so they are
+    kept for a year; anything else under /static (no version, or an old
+    one) is checked with the server every time and never kept by the CDN."""
+    response.headers["X-Waudible-Build"] = BUILD
+    if request.endpoint == "static":
+        if request.args.get("v") == BUILD and not DEBUG:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            _always_fresh(response)
+    return response
+
+
+@app.after_request
 def security_headers(response):
     response.headers["X-Content-Type-Options"]  = "nosniff"
     response.headers["X-Frame-Options"]         = "DENY"
@@ -287,6 +302,14 @@ def render_page(template: str, **context):
     History restores (back button with an empty htmx cache) get the
     full page, and htmx takes #app-content out of it."""
     fragment = _is_htmx() and not request.headers.get('HX-History-Restore-Request')
+    page_build = request.headers.get('X-Waudible-Build')
+    if fragment and request.method == 'GET' and page_build and page_build != BUILD:
+        # The page asking is an older build (update.js sends this only when
+        # nothing is playing): load the new page in full, with its own CSS
+        # and JS, instead of swapping it into the old one
+        response = make_response('', 200)
+        response.headers['HX-Redirect'] = request.full_path.rstrip('?')
+        return response
     response = make_response(render_template(
         template, layout='fragment.html' if fragment else 'base.html', **context))
     response.vary.add('HX-Request')
@@ -299,9 +322,12 @@ def render_page(template: str, **context):
 @app.context_processor
 def player_constants():
     # Ids with the names and descriptions listeners see (the player's
-    # picker, and the same mapping for the page scripts)
+    # picker, and the same mapping for the page scripts). asset() gives
+    # CSS, JS and icon URLs with the build hash, and build is the hash the
+    # page was made with (the update check compares it with the server's).
     return {"voices": VOICES, "speeds": SPEEDS,
-            "voice_labels": {v: {"name": n, "description": d} for v, (n, d) in VOICE_LABELS.items()}}
+            "voice_labels": {v: {"name": n, "description": d} for v, (n, d) in VOICE_LABELS.items()},
+            "asset": asset, "build": BUILD}
 
 
 def _library_context():
@@ -526,6 +552,51 @@ def get_audio(book_id, page):
 
 
 # ─────────────────────────────────────────
+# ANOTHER VOICE
+# Books are made in the default voice; a voice the listener picks is made
+# on demand. The player asks for the page it is on (and the worker adds
+# the next VOICE_AHEAD pages, ahead of the book queue), keeps playing the
+# old voice, and polls the status until the page is ready or has failed.
+# ─────────────────────────────────────────
+def _voice_page_arg(book: Book, source) -> int:
+    try:
+        page = int(source.get('page'))
+    except (TypeError, ValueError):
+        abort(400)
+    if not 0 <= page < book.pages:
+        abort(400)
+    return page
+
+
+@app.route('/voice/prepare', methods=['POST'])
+def prepare_voice():
+    data = request.get_json(silent=True) or {}
+    try:
+        book = _get_book(int(data.get('book_id')))
+    except (TypeError, ValueError):
+        abort(400)
+    if data.get('voice') not in VOICES:
+        abort(400)
+    voice = data['voice']
+    page  = _voice_page_arg(book, data)
+    pages = range(page, min(page + 1 + VOICE_AHEAD, book.pages))
+    enqueue_voice(current_user.id, book.id, book.storage_key, voice, pages)
+    return jsonify({"voice": voice, "page": page,
+                    "state": voice_state(book.id, book.storage_key, voice, page)})
+
+
+@app.route('/voice/status/<int:book_id>')
+def voice_status(book_id):
+    book = _get_book(book_id)
+    if request.args.get('voice') not in VOICES:
+        abort(400)
+    voice = request.args['voice']
+    page  = _voice_page_arg(book, request.args)
+    return _no_store(jsonify({"voice": voice, "page": page,
+                              "state": voice_state(book.id, book.storage_key, voice, page)}))
+
+
+# ─────────────────────────────────────────
 # PROCESSING STATUS
 # Same JSON shape the progress bars poll
 # ─────────────────────────────────────────
@@ -643,27 +714,43 @@ def delete_book(book_id):
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Precached by the service worker (cache first)
-SHELL_FILES = ["css/style.css", "js/htmx.min.js", "js/sheets.js", "js/offline.js",
+SHELL_FILES = ["css/style.css", "js/update.js", "js/htmx.min.js", "js/sheets.js", "js/offline.js",
                "js/player.js", "js/app.js", "icons/icon-192.png", "icons/icon-512.png",
                "icons/maskable-512.png", "icons/apple-touch-icon.png"]
-SHELL_URLS  = ["/offline", "/manifest.webmanifest"] + [f"/static/{f}" for f in SHELL_FILES]
 FONT_CSS    = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
 
 
-def _shell_version() -> str:
-    """Changes whenever the worker, a shell file or a template changes, so
-    the browser installs the new worker and drops the old caches."""
+def _build_hash() -> str:
+    """One hash for the whole build: the worker, every static file, the
+    templates and the Python code. It goes into every CSS, JS and icon URL
+    (?v=), the service worker's cache name and an X-Waudible-Build header,
+    so a page and its assets always come from the same build: a new build
+    means new URLs, which no old cache (the service worker's, the
+    browser's or Cloudflare's) can answer with an old file."""
     h = hashlib.sha256()
-    paths = [os.path.join(APP_DIR, "sw.js")] + [os.path.join(app.static_folder, f) for f in SHELL_FILES]
-    tpl = os.path.join(APP_DIR, "templates")
-    paths += sorted(os.path.join(tpl, f) for f in os.listdir(tpl))
-    for path in paths:
+    paths = [os.path.join(APP_DIR, "sw.js")]
+    for folder in (app.static_folder, os.path.join(APP_DIR, "templates")):
+        for root, _dirs, files in os.walk(folder):
+            paths += [os.path.join(root, f) for f in files]
+    paths += [os.path.join(APP_DIR, f) for f in os.listdir(APP_DIR) if f.endswith(".py")]
+    for path in sorted(paths):
+        h.update(os.path.relpath(path, APP_DIR).encode())
         with open(path, "rb") as f:
             h.update(f.read())
     return h.hexdigest()[:12]
 
 
-SHELL_VERSION = _shell_version()
+BUILD = _build_hash()
+SHELL_VERSION = BUILD     # the service worker's name for it
+
+
+def asset(filename: str) -> str:
+    """/static/<filename>?v=<build>, for templates."""
+    return f"/static/{filename}?v={BUILD}"
+
+
+def shell_urls() -> list[str]:
+    return ["/offline", "/manifest.webmanifest"] + [asset(f) for f in SHELL_FILES]
 
 
 def _always_fresh(response):
@@ -706,8 +793,8 @@ def web_manifest():
 def service_worker():
     with open(os.path.join(APP_DIR, "sw.js"), encoding="utf-8") as f:
         source = f.read()
-    source = (source.replace("__VERSION__", SHELL_VERSION)
-                    .replace("__SHELL_URLS__", json.dumps(SHELL_URLS))
+    source = (source.replace("__VERSION__", BUILD)
+                    .replace("__SHELL_URLS__", json.dumps(shell_urls()))
                     .replace("__FONT_CSS__", json.dumps(FONT_CSS)))
     response = make_response(source)
     response.mimetype = "text/javascript"

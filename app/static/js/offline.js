@@ -1077,5 +1077,6 @@
         ready, isOnline, state, download, cancel, remove, removePages, removeAll, localBook, playerData,
         saveProgress, markSynced, sync, reconcile, maybeAsk, initPage, updateActions, size, chaptersOf,
         user: () => uid,
+        busy: () => jobs.size > 0,          // a download is running (the update check waits)
     };
 })();

@@ -6,7 +6,7 @@ import time
 import helpers
 from helpers import fake, upload, login, meta_token
 
-from app import worker
+from app import tts_engine, worker
 from app.main import app, MAX_BOOKS
 from app.limiter import limiter
 from app.models import db, Book, Progress
@@ -183,6 +183,55 @@ try:
     r = anon.get("/library", headers=HX)
     T.check("logged out htmx request gets HX-Redirect to login", r.status_code == 204 and r.headers.get("HX-Redirect", "").startswith("/login?next="))
 
+    T.section("Build version and asset URLs")
+    from app import main as app_main
+    build = app_main.BUILD
+    shell = a.get("/").get_data(as_text=True)
+    T.check("the build is a 12 character hash", re.fullmatch(r"[0-9a-f]{12}", build), build)
+    T.check("the page carries its build", f'<meta name="waudible-build" content="{build}">' in shell)
+    T.check("every CSS and JS URL carries the build", all(f'/static/{f}?v={build}"' in shell for f in
+            ("css/style.css", "js/update.js", "js/htmx.min.js", "js/sheets.js", "js/offline.js", "js/player.js", "js/app.js"))
+            and not re.search(r'/static/[^"?]+\.(css|js)"', shell))
+    login_page = anon.get("/login").get_data(as_text=True)
+    T.check("the login page too", f'/static/css/style.css?v={build}"' in login_page and f'/static/js/signed-out.js?v={build}"' in login_page)
+    T.check("every response says which build made it", all(c.get(u).headers.get("X-Waudible-Build") == build
+            for c, u in ((a, "/"), (a, "/library"), (anon, "/login"), (anon, "/sw.js"), (a, f"/player/{book_id}"))))
+    cur = anon.get(f"/static/css/style.css?v={build}")
+    T.check("a current asset is kept for a year (immutable)", cur.status_code == 200
+            and cur.headers["Cache-Control"] == "public, max-age=31536000, immutable", cur.headers.get("Cache-Control"))
+    for u in ("/static/css/style.css", "/static/js/player.js?v=0123456789ab"):
+        r = anon.get(u)
+        T.check(f"{u} (no or old version): checked every time, never kept by the CDN", r.status_code == 200
+                and r.headers["Cache-Control"] == "no-cache, max-age=0" and r.headers.get("CDN-Cache-Control") == "no-store"
+                and r.headers.get("Cloudflare-CDN-Cache-Control") == "no-store", r.headers.get("Cache-Control"))
+    sw_src = anon.get("/sw.js").get_data(as_text=True)
+    T.check("the service worker's version and cache name are the same build", f"const VERSION    = '{build}';" in sw_src)
+    T.check("and it precaches the versioned URLs", f'"/static/css/style.css?v={build}"' in sw_src
+            and f'"/static/js/player.js?v={build}"' in sw_src and '"/offline"' in sw_src)
+
+    T.section("Another voice (routes)")
+    t = meta_token(a)
+    prep = a.post("/voice/prepare", json={"book_id": book_id, "voice": "am_echo", "page": 1}, headers={"X-CSRFToken": t})
+    T.check("POST /voice/prepare queues the page", prep.status_code == 200 and prep.get_json()["voice"] == "am_echo"
+            and prep.get_json()["page"] == 1 and prep.get_json()["state"] in ("queued", "working", "ready"), prep.get_json())
+    helpers.wait_until(lambda: a.get(f"/voice/status/{book_id}?voice=am_echo&page=1").get_json()["state"] == "ready", 30)
+    st = a.get(f"/voice/status/{book_id}?voice=am_echo&page=1")
+    T.check("GET /voice/status reports it ready, not cached", st.get_json()["state"] == "ready" and st.headers["Cache-Control"] == "no-store")
+    T.check("the page after it is made too (pages ahead)", helpers.wait_until(
+            lambda: a.get(f"/voice/status/{book_id}?voice=am_echo&page=2").get_json()["state"] == "ready", 30))
+    T.check("a page before it wasn't asked for", a.get(f"/voice/status/{book_id}?voice=am_echo&page=0").get_json()["state"] == "none")
+    T.check("its audio is the voice's own file", a.get(f"/audio/{book_id}/1?voice=am_echo").status_code == 200
+            and tts_engine.get_audio_path(key, 1, "am_echo"))
+    bad = [a.post("/voice/prepare", json=j, headers={"X-CSRFToken": t}).status_code for j in (
+        {"book_id": book_id, "voice": "../x", "page": 0}, {"book_id": book_id, "voice": "Elorm", "page": 0},
+        {"book_id": book_id, "voice": "am_echo", "page": 3}, {"book_id": book_id, "voice": "am_echo", "page": -1},
+        {"book_id": book_id, "voice": "am_echo"}, {"book_id": "x", "voice": "am_echo", "page": 0})]
+    T.check("unknown voices (names too), pages out of range and bad ids -> 400", bad == [400] * 6, bad)
+    T.check("status: unknown voice or page -> 400", [a.get(u).status_code for u in (f"/voice/status/{book_id}?voice=x&page=0",
+            f"/voice/status/{book_id}?voice=am_echo&page=9", f"/voice/status/{book_id}?voice=am_echo")] == [400] * 3)
+    T.check("POST /voice/prepare needs the CSRF token", a.post("/voice/prepare", json={"book_id": book_id, "voice": "am_echo",
+            "page": 0}).status_code == 400)
+
     T.section("Privacy: user B asks for user A's book")
     login(b, "books_b", PW)
     t = meta_token(b)
@@ -193,6 +242,9 @@ try:
         code = b.get(u).status_code
         T.check(f"B GET {u} -> 404", code == 404, code)
     T.check("B POST /delete -> 404", b.post(f"/delete/{book_id}", data={"csrf_token": t}).status_code == 404)
+    T.check("B POST /voice/prepare -> 404", b.post("/voice/prepare", json={"book_id": book_id, "voice": "am_adam", "page": 0},
+            headers={"X-CSRFToken": t}).status_code == 404)
+    T.check("B GET /voice/status -> 404", b.get(f"/voice/status/{book_id}?voice=am_echo&page=1").status_code == 404)
     T.check("B POST /save_progress -> 404", b.post("/save_progress", json={"book_id": book_id, "page": 0}, headers={"X-CSRFToken": t}).status_code == 404)
     T.check("a book id that doesn't exist is the same 404", b.get("/read/999999999").status_code == 404)
     with app.app_context():
@@ -202,10 +254,11 @@ try:
     T.check("B's pages don't list A's books", f'data-open-book="{book_id}"' not in home_b and "No books yet" in home_b)
 
     T.section("Logged out")
-    for u in ["/", "/library", "/downloads", "/offline/books", "/offline/csrf", *gets]:
+    for u in ["/", "/library", "/downloads", "/offline/books", "/offline/csrf", f"/voice/status/{book_id}?voice=am_echo&page=1", *gets]:
         r = anon.get(u)
         T.check(f"GET {u} -> login", r.status_code == 302 and r.location.startswith("/login?next="), f"{r.status_code} {r.location}")
-    for u, kw in ((f"/delete/{book_id}", {}), ("/save_progress", {"json": {"book_id": book_id, "page": 0}}), ("/upload", {})):
+    for u, kw in ((f"/delete/{book_id}", {}), ("/save_progress", {"json": {"book_id": book_id, "page": 0}}), ("/upload", {}),
+                  ("/voice/prepare", {"json": {"book_id": book_id, "voice": "am_echo", "page": 0}})):
         r = anon.post(u, **kw)
         T.check(f"POST {u} -> login", r.status_code == 302 and r.location.startswith("/login"), f"{r.status_code} {r.location}")
 

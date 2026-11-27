@@ -78,6 +78,14 @@
                     <span class="player-status" id="player-status" role="status" aria-live="polite"></span>
                     <span id="time-remaining">-0:00</span>
                 </div>
+                {# A voice being prepared (the old one keeps playing), or why it failed #}
+                <div class="voice-status" id="voice-status" role="status" aria-live="polite" hidden>
+                    <span class="voice-status-text" id="voice-status-text"></span>
+                    <span class="voice-status-actions">
+                        <button type="button" class="link-btn" id="voice-retry" hidden>Try again</button>
+                        <button type="button" class="link-btn" id="voice-dismiss" hidden>Dismiss</button>
+                    </span>
+                </div>
             </div>
 
             <div class="controls">
