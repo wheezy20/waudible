@@ -45,6 +45,13 @@
     let openToken   = 0;
     let pendingId   = null;     // book being opened (waiting for the server)
     let readinessTimer = null;
+    // The voice playing, and a voice picked but not ready yet. A picked
+    // voice whose page isn't made yet is prepared by the worker while the
+    // old voice keeps playing; the player switches when the page is ready.
+    let voice       = 'af_heart';
+    let pending     = null;     // { voice, page } while preparing
+    let pendingTimer = null;
+    let failedVoice = null;
 
     const csrf = () => document.querySelector('meta[name="csrf-token"]').content;
 
@@ -130,7 +137,10 @@
         book        = data;
         currentPage = data.page;
         speed       = data.speed;
-        voiceEl.value = data.voice;
+        voice       = data.voice;
+        voiceEl.value = voice;
+        cancelPending();
+        hideVoiceStatus();
         readyPages  = new Set();
         tocChapters = [];
         preloadedKey = null;
@@ -172,7 +182,7 @@
 
     // Playing from the downloaded copy (its voice, on this device). A copy
     // can hold the whole book or only some chapters.
-    const fromDevice = () => !!(book && book.local && voiceEl.value === book.local.voice);
+    const fromDevice = () => !!(book && book.local && voice === book.local.voice);
     const pagesHere  = () => new Set(book && book.local ? book.local.have : []);
     const isHere     = page => !book || !book.local || book.local.have.includes(page);
     const partial    = () => !!(book && book.local && book.local.have.length < book.pages);
@@ -211,8 +221,9 @@
     function syncNetworkUi() {
         const off = !Offline.isOnline();
         const note = $('voice-note');
-        if (off && book && book.local && voiceEl.value !== book.local.voice) {
-            voiceEl.value = book.local.voice;
+        if (off && pending) { cancelPending(); hideVoiceStatus(); voiceEl.value = voice; }
+        if (off && book && book.local && voice !== book.local.voice) {
+            voice = voiceEl.value = book.local.voice;
             readyPages = pagesHere();
             updateTocReadiness();
         }
@@ -221,7 +232,9 @@
         if (off) text = book && book.local
             ? `Offline: playing the downloaded voice (${Voices.name(book.local.voice)}). Other voices need a connection.`
             : 'Other voices need a connection.';
-        else if (book && book.local && voiceEl.value !== book.local.voice)
+        else if (pending)
+            text = `Preparing this page in ${Voices.name(pending.voice)}. ${Voices.name(voice)} keeps playing until it's ready, which can take about a minute.`;
+        else if (book && book.local && voice !== book.local.voice)
             text = `Downloaded with ${Voices.name(book.local.voice)}. This voice streams over your connection.`;
         note.textContent = text;
         note.hidden = !text;
@@ -232,6 +245,8 @@
     function clear() {
         openToken++;                        // cancels a book that is still opening
         pendingId = null;
+        cancelPending();
+        hideVoiceStatus();
         clearInterval(readinessTimer);
         clearSleep();
         collapseSheet();
@@ -252,7 +267,10 @@
     }
 
     // ── LOAD PAGE ──
-    function loadPage(page, autoplay = true) {
+    // startAt: where to start, as a fraction of the page (a voice change
+    // carries on from about the same place in the new voice)
+    let startAt = 0;
+    function loadPage(page, autoplay = true, from = 0) {
         if (!book || page < 0 || page >= book.pages) return;
         if (!isHere(page)) { notHere(page); return; }
         currentPage = page;
@@ -269,7 +287,8 @@
 
         // Same audio element for the whole session (keeps the lock-screen
         // player alive). Setting src starts loading; play() right away.
-        audioEl.src = `/audio/${book.id}/${currentPage}?voice=${voiceEl.value}`;
+        startAt = from;
+        audioEl.src = `/audio/${book.id}/${currentPage}?voice=${voice}`;
         setPlaybackRate();
         updateMediaSession();
         resetSeek();
@@ -280,6 +299,7 @@
 
         fetchPageText(page);
         saveProgress();
+        voiceOnPage(page);
     }
 
     // Previous and next page; a downloaded copy skips pages that aren't here
@@ -348,12 +368,129 @@
     $('btn-next').addEventListener('click', () => changePage(1));
     $('jump-go').addEventListener('click', jumpToPage);
     $('jump-input').addEventListener('keydown', e => { if (e.key === 'Enter') jumpToPage(); });
-    voiceEl.addEventListener('change', () => {
+    voiceEl.addEventListener('change', () => chooseVoice(voiceEl.value));
+
+    // ── CHANGING VOICE ──
+    function chooseVoice(v) {
+        if (!book) return;
+        failedVoice = null;
+        if (v === voice) {                        // back to the voice playing
+            cancelPending(); hideVoiceStatus(); syncNetworkUi();
+            return;
+        }
+        if (book.local && v === book.local.voice) { switchVoice(v); return; }   // on this device
+        if (!Offline.isOnline()) { voiceEl.value = voice; return; }
+        prepareVoice(v, currentPage);
+    }
+
+    // Ask the worker for this page (and the next few) in voice v
+    async function prepareVoice(v, page) {
+        const id = book.id;
+        cancelPending();
+        pending = { voice: v, page };
+        showVoiceStatus(`Preparing this page in ${Voices.name(v)}`, 'busy');
+        syncNetworkUi();
+        let state = 'failed';
+        try {
+            const res = await fetch('/voice/prepare', {
+                method : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                body   : JSON.stringify({ book_id: id, voice: v, page }),
+            });
+            if (res.ok) state = (await res.json()).state;
+        } catch (e) { /* network: shown as a failure below */ }
+        if (!stillPending(id, v, page)) return;
+        voiceResult(state);
+    }
+
+    function stillPending(id, v, page) {
+        return book && book.id === id && pending && pending.voice === v && pending.page === page;
+    }
+
+    function voiceResult(state) {
+        clearTimeout(pendingTimer);
+        if (state === 'ready') { switchVoice(pending.voice); return; }
+        if (state === 'failed') { voiceFailed(pending.voice); return; }
+        // Replaced in the queue (this account asked for something else in
+        // another tab): ask again
+        if (state === 'none') { prepareVoice(pending.voice, pending.page); return; }
+        const { voice: v, page } = pending, id = book.id;
+        pendingTimer = setTimeout(async () => {
+            let next = 'queued';
+            try {
+                const res = await fetch(`/voice/status/${id}?voice=${v}&page=${page}`);
+                next = res.ok ? (await res.json()).state : 'failed';
+            } catch (e) { /* offline for a moment: ask again */ }
+            if (stillPending(id, v, page)) voiceResult(next);
+        }, 2000);
+    }
+
+    // The new voice is ready for this page: carry on from about the same place
+    function switchVoice(v) {
+        const wasPlaying = !audioEl.paused;
+        const d = audioEl.duration;
+        const from = isFinite(d) && d > 0 ? Math.min(audioEl.currentTime / d, 0.98) : 0;
+        cancelPending();
+        hideVoiceStatus();
+        voice = v;
+        voiceEl.value = v;
         readyPages = fromDevice() ? pagesHere() : new Set();
         syncNetworkUi();
         updateTocReadiness();
-        loadPage(currentPage);
+        loadPage(currentPage, wasPlaying, from);   // also saves the new voice
+    }
+
+    function voiceFailed(v) {
+        cancelPending();
+        failedVoice = v;
+        voiceEl.value = voice;                    // the picker shows what is playing
+        showVoiceStatus(`Couldn't prepare this page in ${Voices.name(v)}.`, 'error');
+        syncNetworkUi();
+    }
+
+    function cancelPending() {
+        pending = null;
+        clearTimeout(pendingTimer);
+    }
+
+    // After every page change: a voice still being prepared follows the
+    // listener to the new page, and a voice other than the default asks
+    // for the pages after this one, so they are ready in time
+    function voiceOnPage(page) {
+        if (!book || !Offline.isOnline() || fromDevice()) return;
+        if (pending) {
+            if (pending.page !== page) prepareVoice(pending.voice, page);
+            return;
+        }
+        if (voice !== 'af_heart' && page + 1 < book.pages) {
+            fetch('/voice/prepare', {
+                method : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                body   : JSON.stringify({ book_id: book.id, voice, page: page + 1 }),
+            }).catch(() => {});
+        }
+    }
+
+    const voiceStatusEl = $('voice-status');
+    function showVoiceStatus(text, kind) {
+        voiceStatusEl.hidden = false;
+        voiceStatusEl.classList.toggle('busy', kind === 'busy');
+        voiceStatusEl.classList.toggle('is-error', kind === 'error');
+        $('voice-status-text').textContent = text;
+        $('voice-retry').hidden = kind !== 'error';
+        $('voice-dismiss').hidden = kind !== 'error';
+    }
+    function hideVoiceStatus() {
+        voiceStatusEl.hidden = true;
+        failedVoice = null;
+    }
+    $('voice-retry').addEventListener('click', () => {
+        const v = failedVoice;
+        if (!book || !v) return;
+        voiceEl.value = v;
+        chooseVoice(v);
     });
+    $('voice-dismiss').addEventListener('click', hideVoiceStatus);
 
     // A page that can't load with no network: explain instead of spinning
     audioEl.addEventListener('error', () => {
@@ -408,6 +545,8 @@
     }
 
     audioEl.addEventListener('loadedmetadata', () => {
+        if (startAt > 0 && isFinite(audioEl.duration)) audioEl.currentTime = audioEl.duration * startAt;
+        startAt = 0;
         seekEl.max = isFinite(audioEl.duration) ? audioEl.duration : 0;
         paintSeek(audioEl.currentTime);
     });
@@ -505,7 +644,7 @@
     // connection is back.
     function saveProgress() {
         if (!book) return Promise.resolve();
-        const id = book.id, p = { page: currentPage, speed: speed, voice: voiceEl.value };
+        const id = book.id, p = { page: currentPage, speed: speed, voice: voice };
         const saved = Offline.saveProgress(id, p);
         if (!Offline.isOnline()) return saved;
         return fetch('/save_progress', {
@@ -596,7 +735,7 @@
             return;
         } else {
             try {
-                const data = await (await fetch(`/readiness/${id}?voice=${voiceEl.value}`)).json();
+                const data = await (await fetch(`/readiness/${id}?voice=${voice}`)).json();
                 if (!book || book.id !== id) return;
                 readyPages = new Set(data.ready);
             } catch (e) { return; }
@@ -863,19 +1002,19 @@
         if (!isFinite(duration) || duration <= 0 || audioEl.currentTime < duration / 2) return;
         const next = currentPage + 1;
         if (next >= book.pages || !readyPages.has(next)) return;
-        const key = `${book.id}|${next}|${voiceEl.value}`;
+        const key = `${book.id}|${next}|${voice}`;
         if (key === preloadedKey) return;
         preloadedKey = key;
-        preloadEl.src = `/audio/${book.id}/${next}?voice=${voiceEl.value}`;
+        preloadEl.src = `/audio/${book.id}/${next}?voice=${voice}`;
         preloadEl.load();
     });
 
     // Save on the way out (tab closed or reloaded)
     window.addEventListener('pagehide', () => {
         if (!book) return;
-        Offline.saveProgress(book.id, { page: currentPage, speed: speed, voice: voiceEl.value });
+        Offline.saveProgress(book.id, { page: currentPage, speed: speed, voice: voice });
         if (!Offline.isOnline()) return;
-        const body = new Blob([JSON.stringify({ book_id: book.id, page: currentPage, speed: speed, voice: voiceEl.value })],
+        const body = new Blob([JSON.stringify({ book_id: book.id, page: currentPage, speed: speed, voice: voice })],
                               { type: 'application/json' });
         // sendBeacon can't set the CSRF header, so use a keepalive fetch
         fetch('/save_progress', { method: 'POST', keepalive: true, body,
@@ -894,6 +1033,8 @@
         expand: expandSheet, collapse: collapseSheet, isExpanded,
         bookId: () => (book ? book.id : null),
         currentPage: () => currentPage,
+        voice: () => voice,
+        pendingVoice: () => (pending ? pending.voice : null),
         fromDevice,
     };
     window.changePage = changePage;

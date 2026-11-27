@@ -1,11 +1,11 @@
+import collections
 import logging
-import queue
 import threading
 import time
 from app.models import db, Book
-from app.pdf_reader import extract_pages
+from app.pdf_reader import extract_page, extract_pages
 from app.storage import pdf_path
-from app.tts_engine import text_to_audio, silent_page, is_cancelled
+from app.tts_engine import text_to_audio, silent_page, is_cancelled, get_audio_path
 
 log = logging.getLogger(__name__)
 
@@ -18,16 +18,122 @@ log = logging.getLogger(__name__)
 # A watchdog restarts the worker thread if it ever
 # stops, and a page that fails is retried once, then
 # replaced by silence so the book still finishes.
+#
+# Books are made in the default voice. Another voice is made when a
+# listener picks it: the page they are on and the next VOICE_AHEAD pages
+# go in a second queue, which comes first. The worker takes voice pages
+# before the next book and between the pages of the book it is making,
+# so a listener waits for at most one book page plus their own.
 # ─────────────────────────────────────────
-_queue       = queue.Queue()
+_cond        = threading.Condition()
+_books       = collections.deque()    # book ids, in upload order
+_voice_jobs  = collections.deque()    # VoiceJob, first in line first
+_voice_state = {}                     # (book_id, voice, page) -> {"state", "at"}
 _thread      = None
 _watchdog    = None
 _start_lock  = threading.Lock()
 WATCHDOG_SECONDS = 30
+VOICE_AHEAD  = 5                      # pages after the current one
+FAILED_KEEP_SECONDS = 3600            # how long a failure is reported
+
+VoiceJob = collections.namedtuple("VoiceJob", "user_id book_id storage_key page voice")
 
 
 def enqueue(book_id: int):
-    _queue.put(book_id)
+    with _cond:
+        _books.append(book_id)
+        _cond.notify()
+
+
+def enqueue_voice(user_id: int, book_id: int, storage_key: str, voice: str, pages) -> None:
+    """
+    Make these pages in this voice next, in this order, ahead of the book
+    queue. Replaces whatever this user still had waiting (they moved on
+    to another page, voice or book); a page being made carries on.
+    """
+    now = time.time()
+    with _cond:
+        for job in [j for j in _voice_jobs if j.user_id == user_id]:
+            _voice_jobs.remove(job)
+            _voice_state.pop((job.book_id, job.voice, job.page), None)
+        for key in [k for k, v in _voice_state.items()
+                    if v["state"] == "failed" and now - v["at"] > FAILED_KEEP_SECONDS]:
+            del _voice_state[key]
+        new = []
+        for page in pages:
+            key = (book_id, voice, page)
+            if _voice_state.get(key, {}).get("state") == "working":
+                continue
+            if get_audio_path(storage_key, page, voice):
+                _voice_state.pop(key, None)
+                continue
+            _voice_state[key] = {"state": "queued", "at": now}
+            new.append(VoiceJob(user_id, book_id, storage_key, page, voice))
+        _voice_jobs.extendleft(reversed(new))
+        if new:
+            _cond.notify()
+
+
+def voice_state(book_id: int, storage_key: str, voice: str, page: int) -> str:
+    """ready, queued, working, failed or none (not asked for)."""
+    if get_audio_path(storage_key, page, voice):
+        return "ready"
+    with _cond:
+        return _voice_state.get((book_id, voice, page), {}).get("state", "none")
+
+
+def _take():
+    """The next job: a voice page if any is waiting, else a book."""
+    with _cond:
+        while not _voice_jobs and not _books:
+            _cond.wait()
+        if _voice_jobs:
+            return "voice", _voice_jobs.popleft()
+        return "book", _books.popleft()
+
+
+def _next_voice_job():
+    with _cond:
+        return _voice_jobs.popleft() if _voice_jobs else None
+
+
+def _set_voice_state(job, state):
+    with _cond:
+        key = (job.book_id, job.voice, job.page)
+        if state is None:
+            _voice_state.pop(key, None)
+        else:
+            _voice_state[key] = {"state": state, "at": time.time()}
+
+
+def _voice_page(job):
+    """One page in a voice a listener picked. Tried once: the listener is
+    waiting, and sees the error with a Try again button instead."""
+    if is_cancelled(job.storage_key):
+        _set_voice_state(job, None)
+        return
+    _set_voice_state(job, "working")
+    try:
+        text = extract_page(pdf_path(job.storage_key), job.page)
+        text_to_audio(text, job.storage_key, page=job.page, voice=job.voice, book_id=job.book_id)
+        _set_voice_state(job, None)          # ready: the file is there
+    except Exception:
+        if is_cancelled(job.storage_key):
+            _set_voice_state(job, None)
+            return
+        log.exception("Book %s page %s: audio in voice %s failed", job.book_id, job.page + 1, job.voice)
+        _set_voice_state(job, "failed")
+        # The pages after it would most likely fail the same way, a minute
+        # each: drop them (Try again asks for them afresh)
+        with _cond:
+            for other in [j for j in _voice_jobs if (j.user_id, j.book_id, j.voice) == (job.user_id, job.book_id, job.voice)]:
+                _voice_jobs.remove(other)
+                _voice_state.pop((other.book_id, other.voice, other.page), None)
+
+
+def _run_voice_jobs():
+    while (job := _next_voice_job()) is not None:
+        _voice_page(job)
 
 
 def start_worker(app):
@@ -87,13 +193,14 @@ def _watch(app):
 
 def _run(app):
     while True:
-        book_id = _queue.get()
+        kind, job = _take()
         try:
-            _process_book(app, book_id)
+            if kind == "voice":
+                _voice_page(job)
+            else:
+                _process_book(app, job)
         except Exception:
-            log.exception("Audio processing failed for book %s", book_id)
-        finally:
-            _queue.task_done()
+            log.exception("Audio processing failed for %s %s", kind, job)
 
 
 def _set_progress(book_id: int, values: dict) -> bool:
@@ -123,6 +230,7 @@ def _process_book(app, book_id: int):
         # so a re-queued book resumes where it stopped
         failed = 0
         for i, text in enumerate(pages):
+            _run_voice_jobs()               # listeners waiting for a voice go first
             if is_cancelled(storage_key):
                 return
             path, ok = _page_audio(book_id, storage_key, i, text)

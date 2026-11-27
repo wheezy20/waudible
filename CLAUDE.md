@@ -34,7 +34,7 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `app/templates/error.html`: friendly error pages
 - `gunicorn.conf.py`, `run_prod.sh`: production server
 - `deploy/`: systemd unit (`waudible.service`) and install steps (`README.md`)
-- `app/worker.py`: the single background worker, its queue and the watchdog that restarts it; a failing page is retried once, then replaced by silence
+- `app/worker.py`: the single background worker, its book queue, the voice queue that goes first (a page in a voice the listener picked, and the next 5) and the watchdog that restarts it; a failing book page is retried once, then replaced by silence
 - `app/storage.py`: paths for files stored under each book's `storage_key` (`WAUDIBLE_DATA_DIR` moves them, the tests use a temporary folder)
 - `app/pdf_reader.py`: page text, page count, metadata, table of contents
 - `app/session_manager.py`, `app/db.py`: old single-user storage, no longer used by the app, kept until deletion is confirmed
@@ -44,7 +44,8 @@ WAudible is a Flask app that turns PDF books into audiobooks using Kokoro ONNX t
 - `init_db.py`: creates the `users`, `books` and `progress` tables (`python init_db.py`, safe to rerun)
 - `reencode_audio.py`: one-off re-encode of existing page audio to `MP3_BITRATE_KBPS` (dry run unless `--convert`)
 - `app/templates/base.html`: page shell (player, mini player, sheets, nav); `fragment.html` is the content-only layout for htmx swaps; `_player.html`, `_cards.html`, `_icons.html` are partials
-- `app/static/js/player.js` (persistent player, set up once), `app.js` (page scripts after each swap), `sheets.js` (bottom sheets), `offline.js` (downloads, IndexedDB, progress sync, Downloads and offline page), `signed-out.js` (login pages tell the service worker nobody is signed in), `htmx.min.js` (htmx 2.0.11, self-hosted)
+- `BUILD` in `app/main.py`: one hash of the code, in every asset URL (`asset()` in templates), the service worker's cache name and the `X-Waudible-Build` header, so pages and assets never mix builds after a deploy
+- `app/static/js/update.js` (new version check and the "Update available" bar), `player.js` (persistent player, set up once), `app.js` (page scripts after each swap), `sheets.js` (bottom sheets), `offline.js` (downloads, IndexedDB, progress sync, Downloads and offline page), `signed-out.js` (login pages tell the service worker nobody is signed in), `htmx.min.js` (htmx 2.0.11, self-hosted)
 - `app/sw.js`: the service worker, served at `/sw.js` with a version the app fills in; never caches pages or JSON, serves downloaded media per user with Range support
 - `app/static/icons/`: PWA icons made from `assets/waudible.png`; `app/templates/offline.html`, `downloads.html`, `_offline_sheets.html`: offline page, Downloads screen and the download, suggestion and logout sheets
 - `app/static/css/style.css`: UI

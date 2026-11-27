@@ -53,6 +53,33 @@ try:
         extra = {"BOOK8": str(b8),
                  "BOOK4": str(b4), "BOOK5": str(b5), "BOOK6": str(b6), "BOOK7": str(b7),
                  "EMAIL2": helpers.email("browser2"), "PASSWORD2": pw2}
+    if name == "voice_check":
+        # Another voice takes a while to make, and one voice always fails
+        fake.voice_delay = {"bf_emma": 3, "af_nova": 3}
+        fake.fail_voices = {"am_echo"}
+    if name == "update_check":
+        # Static files from a copy, so the test can "deploy" a new build:
+        # GET /__test__/deploy changes the CSS and a script, then the build
+        # hash is worked out again, as a restart after a real deploy would
+        import shutil
+        from app import main as app_main
+        static_copy = os.path.join(helpers.DATA_DIR, "static-copy")
+        shutil.copytree(app.static_folder, static_copy)
+        app.static_folder = static_copy
+        app_main.BUILD = app_main.SHELL_VERSION = app_main._build_hash()
+        deploys = {"n": 0}
+
+        def deploy():
+            deploys["n"] += 1
+            n = deploys["n"]
+            with open(os.path.join(static_copy, "css", "style.css"), "a") as f:
+                f.write(f'\n:root {{ --test-build: "{n}"; }}\n')
+            with open(os.path.join(static_copy, "js", "player.js"), "a") as f:
+                f.write(f"\nwindow.__testBuild = {n};\n")
+            app_main.BUILD = app_main.SHELL_VERSION = app_main._build_hash()
+            return {"deploy": n, "build": app_main.BUILD}
+
+        app.add_url_rule("/__test__/deploy", "test_deploy", deploy)
     upload_pdf = os.path.join(helpers.DATA_DIR, "upload_test.pdf")
     with open(upload_pdf, "wb") as f:
         f.write(helpers.make_pdf(2))

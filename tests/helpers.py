@@ -95,7 +95,8 @@ DATA_DIR = os.environ["WAUDIBLE_DATA_DIR"]
 # FAKE KOKORO
 # Returns a tone of fake.seconds per call (silence if quiet). Set
 # fake.delay to slow it down, or fake.hook(text) to raise or return
-# something else for particular text.
+# something else for particular text. fake.voice_delay ({voice: seconds})
+# slows down one voice, and voices in fake.fail_voices always fail.
 # ─────────────────────────────────────────
 import numpy as np
 import kokoro_onnx
@@ -106,12 +107,17 @@ RATE = 24000
 class FakeKokoro:
     def __init__(self, *args, **kwargs):
         self.seconds, self.delay, self.quiet, self.hook = 1.0, 0.0, False, None
+        self.voice_delay, self.fail_voices = {}, set()
         self.calls = []
 
     def create(self, text, voice, speed):
         self.calls.append(text)
         if self.delay:
             time.sleep(self.delay)
+        if self.voice_delay.get(voice):
+            time.sleep(self.voice_delay[voice])
+        if voice in self.fail_voices:
+            raise RuntimeError(f"fake Kokoro failure for {voice}")
         if self.hook:
             result = self.hook(text)
             if result is not None:

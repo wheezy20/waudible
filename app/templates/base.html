@@ -7,6 +7,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="waudible-build" content="{{ build }}">
     <meta name="theme-color" content="#121212">
     {% if not offline_shell %}
     <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -14,13 +15,13 @@
     <meta name="waudible-user" content="{{ current_user.id }}" data-name="{{ current_user.display_name }}">
     {% endif %}
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}" type="image/png">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="icon" href="{{ asset('icons/icon-192.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">
     {# No eval (CSP), no history snapshots in localStorage (user data), back
        button asks the server for the page instead #}
     <meta name="htmx-config" content='{"allowEval": false, "historyCacheSize": 0, "includeIndicatorStyles": false, "scrollIntoViewOnBoost": false}'>
     <title>{% block title %}WAudible{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/style.css') }}">
 </head>
 {# Links and forms inside the shell load into #app-content (htmx boost) #}
 {% if offline_shell %}
@@ -44,6 +45,11 @@
         {% endif %}
     </div>
 </header>
+
+{# A newer version is on the server (update.js) #}
+<div class="update-bar" id="update-bar" role="status" hidden>
+    <button type="button" class="update-btn" id="update-btn">Update available, tap to refresh</button>
+</div>
 
 {# The only part that changes when navigating #}
 <main id="app-content" hx-history-elt>
@@ -143,11 +149,12 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/sheets.js') }}"></script>
-<script src="{{ url_for('static', filename='js/offline.js') }}"></script>
-<script src="{{ url_for('static', filename='js/player.js') }}"></script>
-<script src="{{ url_for('static', filename='js/save.js') }}"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ asset('js/update.js') }}"></script>
+<script src="{{ asset('js/htmx.min.js') }}"></script>
+<script src="{{ asset('js/sheets.js') }}"></script>
+<script src="{{ asset('js/offline.js') }}"></script>
+<script src="{{ asset('js/player.js') }}"></script>
+<script src="{{ asset('js/save.js') }}"></script>
+<script src="{{ asset('js/app.js') }}"></script>
 </body>
 </html>

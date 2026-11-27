@@ -860,6 +860,49 @@ body.sheet-open { overflow: hidden; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* A voice being prepared, or the error if it failed (under the seek bar) */
+.voice-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0 12px;
+    margin-top: 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--orange-dim);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+}
+.voice-status[hidden] { display: none; }
+.voice-status.busy .voice-status-text::before {
+    content: '';
+    display: inline-block;
+    vertical-align: -1px;
+    width: 11px;
+    height: 11px;
+    margin-right: 8px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: var(--orange);
+    animation: spin 0.8s linear infinite;
+}
+.voice-status.is-error { background: rgba(241, 94, 85, 0.14); color: var(--text); }
+.voice-status-actions { display: inline-flex; gap: 12px; }
+.voice-status-actions:not(:has(button:not([hidden]))) { display: none; }
+.link-btn {
+    padding: 2px;
+    border: none;
+    background: none;
+    color: var(--orange);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+.link-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 4px; }
+
 /* Main controls row */
 .controls {
     display: flex;
@@ -1296,6 +1339,41 @@ body.has-mini .home-main { padding-bottom: calc(var(--nav-h) + 120px + var(--saf
     body.has-mini .home-main { padding-bottom: 180px; }
     .toast { bottom: calc(100px + var(--safe-bottom)); }
 }
+
+/* A newer version is on the server (update.js) */
+/* Above the bottom nav (and the mini player), where the toast goes; the
+   toast moves up while the bar shows */
+.update-bar {
+    position: fixed;
+    bottom: calc(var(--nav-h) + 16px + var(--safe-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 600;
+    max-width: calc(100% - 32px);
+}
+body.has-mini .update-bar { bottom: calc(var(--nav-h) + 80px + var(--safe-bottom)); }
+body.has-update .toast { bottom: calc(var(--nav-h) + 140px + var(--safe-bottom)); }
+@media (min-width: 768px) {
+    .update-bar { bottom: calc(24px + var(--safe-bottom)); }
+    body.has-mini .update-bar { bottom: calc(96px + var(--safe-bottom)); }
+    body.has-update .toast { bottom: calc(156px + var(--safe-bottom)); }
+}
+.update-bar[hidden] { display: none; }
+.update-btn {
+    display: block;
+    padding: 10px 18px;
+    border: none;
+    border-radius: var(--pill);
+    background: var(--orange);
+    color: var(--on-orange);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.update-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 /* ══════════ OFFLINE LISTENING ══════════ */
 .offline-badge {
