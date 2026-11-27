@@ -151,6 +151,54 @@ try:
     T.check("a new book after the restart finishes", wait_ready(after_id, 60) == 1)
     T.check("the worker is alive at the end", worker.worker_alive())
 
+    T.section("Another voice goes ahead of the book queue")
+    fake.hook = None
+    fake.voice_delay = {"af_heart": 0.4}          # the book being made is slow
+    slow_id, slow_key = helpers.add_book(uid, "Slow", texts=[f"Slow page {i}." for i in range(12)], status="processing")
+    voiced_id, voiced_key = helpers.add_book(uid, "Voiced", texts=[f"Voiced page {i}." for i in range(8)])
+    worker.enqueue(slow_id)
+    helpers.wait_until(lambda: tts_engine.get_audio_path(slow_key, 0), 15, 0.05)
+    worker.enqueue_voice(uid, voiced_id, voiced_key, "bf_emma", range(2, 2 + 1 + worker.VOICE_AHEAD))
+    states = [worker.voice_state(voiced_id, voiced_key, "bf_emma", p) for p in (1, 2, 7)]
+    T.check("asked-for pages are queued, others not asked for", states[0] == "none" and states[1] in ("queued", "working", "ready")
+            and states[2] in ("queued", "ready"), states)
+    helpers.wait_until(lambda: all(tts_engine.get_audio_path(voiced_key, p, "bf_emma") for p in range(2, 8)), 30, 0.05)
+    with app.app_context():
+        slow = db.session.get(Book, slow_id)
+        slow_done, slow_status = slow.pages_done, slow.status
+    T.check("the page and the next five are made in the new voice", all(tts_engine.get_audio_path(voiced_key, p, "bf_emma")
+            for p in range(2, 8)) and not tts_engine.get_audio_path(voiced_key, 1, "bf_emma"))
+    T.check("while the book in the default voice is still being made (voice pages went first)",
+            slow_status == "processing" and slow_done < 12, f"{slow_status} {slow_done}/12")
+    T.check("ready pages report 'ready'", worker.voice_state(voiced_id, voiced_key, "bf_emma", 2) == "ready")
+
+    fake.fail_voices = {"am_echo"}
+    calls_before = len(fake.calls)
+    worker.enqueue_voice(uid, voiced_id, voiced_key, "am_echo", range(0, 6))
+    helpers.wait_until(lambda: worker.voice_state(voiced_id, voiced_key, "am_echo", 0) == "failed", 20, 0.05)
+    time.sleep(1)
+    echo_calls = sum(1 for c in fake.calls[calls_before:] if c.startswith("Voiced page"))
+    T.check("after a failure the rest of that request is dropped, not tried page by page",
+            echo_calls == 1 and worker.voice_state(voiced_id, voiced_key, "am_echo", 1) == "none", echo_calls)
+    T.check("a voice page that fails reports 'failed' (no silent file in its place)",
+            worker.voice_state(voiced_id, voiced_key, "am_echo", 0) == "failed"
+            and not tts_engine.get_audio_path(voiced_key, 0, "am_echo"))
+    T.check("the failure is logged with book, page and voice", any(f"Book {voiced_id} page 1: audio in voice am_echo failed" in m
+            and exc for _, m, exc in records))
+    fake.fail_voices = set()
+    fake.voice_delay = {"af_heart": 0.4, "af_nova": 0.3}
+    worker.enqueue_voice(uid, voiced_id, voiced_key, "af_nova", range(0, 6))
+    worker.enqueue_voice(uid, voiced_id, voiced_key, "am_adam", [0])     # the listener changed their mind
+    helpers.wait_until(lambda: tts_engine.get_audio_path(voiced_key, 0, "am_adam"), 20, 0.05)
+    time.sleep(1.5)
+    nova = [p for p in range(6) if tts_engine.get_audio_path(voiced_key, p, "af_nova")]
+    T.check("a new request replaces what that listener still had waiting", len(nova) <= 1, nova)
+    worker.enqueue_voice(uid, voiced_id, voiced_key, "am_echo", [0])
+    helpers.wait_until(lambda: tts_engine.get_audio_path(voiced_key, 0, "am_echo"), 20, 0.05)
+    T.check("asking again after a failure tries again", worker.voice_state(voiced_id, voiced_key, "am_echo", 0) == "ready")
+    fake.voice_delay = {}
+    T.check("the slow book still finishes", wait_ready(slow_id, 60) == 12)
+
     T.section("48 kbps audio and re-encoding old 64 kbps pages")
     import os
     import re

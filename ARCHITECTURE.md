@@ -139,7 +139,7 @@ Only these routes are public:
 |------------------|-------------------------|
 | `/register`      | create an account (invite code) |
 | `/login`         | sign in                 |
-| `/static/...`    | CSS, JS, icons          |
+| `/static/...`    | CSS, JS, icons (`?v=<build>` URLs kept a year, anything else checked every time) |
 | `/manifest.webmanifest` | web app manifest |
 | `/sw.js`         | service worker (no-cache, version filled in by the app) |
 | `/offline`       | the offline page shell (no user data, no CSRF token) |
@@ -158,6 +158,8 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/cover/<book_id>`                | cover image                              |
 | `/status/<book_id>`               | background processing progress           |
 | `/readiness/<book_id>?voice=`     | which pages have audio ready for a voice |
+| `/voice/prepare`                  | make a page in another voice, and the next 5 (POST, JSON `book_id`, `voice`, `page`) |
+| `/voice/status/<book_id>?voice=&page=` | `ready`, `queued`, `working`, `failed` or `none` for one page |
 | `/toc/<book_id>`                  | table of contents                        |
 | `/page_text/<book_id>/<page>`     | page text preview                        |
 | `/save_progress`                  | save page, speed, voice (POST, JSON with `book_id`) |
@@ -189,7 +191,19 @@ Code: `app/sw.js` (service worker, served at `/sw.js`), `static/js/offline.js` (
 
 ### Installing
 
-`/manifest.webmanifest`: name WAudible, `display: standalone`, `start_url /`, background `#121212`, theme `#E95420`, icons at 192 and 512 (`static/icons/`, made from `assets/waudible.png`) and a maskable 512. `/sw.js` is served with `Cache-Control: no-cache`, and the app writes a version into it (a hash of the worker, the shell files and the templates), so any change installs a new worker, which takes over straight away and deletes the old shell cache.
+`/manifest.webmanifest`: name WAudible, `display: standalone`, `start_url /`, background `#121212`, theme `#E95420`, icons at 192 and 512 (`static/icons/`, made from `assets/waudible.png`) and a maskable 512. `/sw.js` is served with `Cache-Control: no-cache`, and the app writes the build into it, so any change installs a new worker, which takes over straight away and deletes the old shell cache.
+
+### Builds and updates
+
+`BUILD` in `app/main.py` is one hash of the worker, every static file, the templates and the Python code, worked out at startup. It is in:
+
+- every CSS, JS and icon URL (`asset('css/style.css')` in templates gives `/static/css/style.css?v=<build>`);
+- the service worker's version and its shell cache name (`waudible-shell-<build>`);
+- `<meta name="waudible-build">` on every page and an `X-Waudible-Build` header on every response.
+
+So a page only ever loads the CSS and JS of its own build: after a deploy the new page asks for new URLs, which neither the old worker's cache, the browser's cache nor Cloudflare's edge can answer with an old file. Before this, the old worker served the old `style.css` and scripts (cache first, same URL) with the new HTML until the app was restarted a second time. Static files with the current `?v=` are sent with `Cache-Control: public, max-age=31536000, immutable` (not in debug mode); without it or with an old one they get `no-cache` and are kept out of the CDN.
+
+A page that stays open across a deploy (the installed app resumed from the background) finds out from `static/js/update.js`: when an htmx or JSON reply carries another build, or a new worker takes over (`controllerchange`, then the worker is asked its version), a bar shows "Update available, tap to refresh". The worker is checked for updates whenever the app comes back to the foreground and every 30 minutes. The page reloads by itself when nothing is playing, no sheet is open, no download is running, it is online, and there has been no input for a minute (or the app is in the background). With nothing playing, htmx requests also send the page's build, and the server answers a different one with `HX-Redirect`, so a link opens the new page in full instead of swapping new HTML into the old page.
 
 ### What the service worker does
 
@@ -248,6 +262,7 @@ Code: `app/worker.py` (queue and worker), `app/tts_engine.py` (Kokoro and audio 
 4. Pages that already have audio are skipped, so a book that is processed again resumes where it stopped.
 5. When the app starts (the first request, or `run.py` in the debug reloader's serving process), the worker starts and every book still marked `processing` is put back on the queue.
 6. If the reader asks for a page that isn't ready yet, `/audio` generates that one page on demand.
+6a. Books are made in the default voice only. When a listener picks another voice, the player asks `/voice/prepare` for the page it is on; the worker puts that page and the next 5 in a second queue that comes first: it takes voice pages before the next book and between the pages of the book it is making, so a listener waits for at most one book page plus their own. A new request replaces what that listener still had waiting. A voice page is tried once; if it fails, `/voice/status` reports `failed`, the rest of that request is dropped and the player shows the error with Try again. Meanwhile the old voice keeps playing; the player polls `/voice/status` every 2 seconds and switches to the new voice at about the same place in the page when it is ready, then saves it. If the page changes while a voice is being prepared, the request follows to the new page. While listening in a voice other than the default, each page change asks for the pages after it.
 7. A page with nothing to say (no letters or digits, or Kokoro returns no audio) becomes about 5 seconds of silence, long enough that Android keeps its media notification. Pages longer than 1500 characters are spoken in chunks split at sentence ends and joined with a short pause.
 8. If a page fails for any other reason, the worker logs it with the book id and page, retries once, then writes the same silent placeholder and carries on, so one bad page never stops a book. When a book finishes, the log says how many pages failed.
 9. A watchdog thread checks every 30 seconds that the worker thread is alive. If it ever stopped, the watchdog starts a new one and re-queues every book still marked `processing`.

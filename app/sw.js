@@ -4,7 +4,14 @@
 //
 // - Navigations: network first. With no network, the precached /offline
 //   page, which lists this account's downloads from IndexedDB.
-// - App shell (CSS, JS, icons, the offline page): cache first.
+// - App shell (CSS, JS, icons, the offline page): cache first. Asset URLs
+//   carry the build hash (?v=), the same hash as this worker's VERSION and
+//   cache name, so a page only ever gets the CSS and JS of its own build.
+//   A page from a newer build asks for URLs this cache doesn't have, and
+//   they come from the network.
+// - Updates: a new worker installs its own shell cache, then takes over
+//   straight away (skipWaiting, clients.claim) and drops the old cache.
+//   Open pages see controllerchange, ask the version, and offer a reload.
 // - Downloaded media (/audio and /cover of downloaded books): cache first
 //   from the signed-in user's own cache, with Range support (206) so
 //   seeking works offline. Only offline.js puts files there.
@@ -46,7 +53,10 @@ self.addEventListener('activate', event => {
 let currentUser;    // undefined: not read yet; null: nobody
 
 self.addEventListener('message', event => {
-    if (event.data && event.data.type === 'user') currentUser = event.data.uid == null ? null : Number(event.data.uid);
+    if (!event.data) return;
+    if (event.data.type === 'user') currentUser = event.data.uid == null ? null : Number(event.data.uid);
+    // The page's update check: which build is this worker?
+    if (event.data.type === 'version' && event.ports[0]) event.ports[0].postMessage({ version: VERSION });
 });
 
 function readUser() {
@@ -90,8 +100,9 @@ self.addEventListener('fetch', event => {
         event.respondWith(fetch(req).catch(offlinePage));
         return;
     }
-    if (SHELL_URLS.includes(url.pathname) && !url.search) {
-        event.respondWith(caches.match(url.pathname, { cacheName: SHELL }).then(hit => hit || fetch(req)));
+    const shellUrl = url.pathname + url.search;
+    if (SHELL_URLS.includes(shellUrl)) {
+        event.respondWith(caches.match(shellUrl, { cacheName: SHELL }).then(hit => hit || fetch(req)));
         return;
     }
     if (MEDIA.test(url.pathname)) {

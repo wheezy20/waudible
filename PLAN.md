@@ -153,3 +153,13 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Ids unchanged everywhere they are stored or sent (database, audio file names, URLs, cache keys, offline downloads), so existing audio, saved voices and downloads keep working
 - [x] Voice picker in the More sheet shows names and descriptions; download text, Downloads, the offline page and player notes use the names
 - [ ] Tone words for the descriptions after listening (only Esinam has one, "warm")
+
+## Updates after a deploy and changing voice
+
+- [x] Reproduced in headless Chrome: after a deploy the installed app showed the new HTML with the old CSS and JS from the service worker's cache, until a second restart
+- [x] One build hash in every CSS, JS and icon URL, the service worker's cache name and every response; current assets kept a year, others checked every time and kept out of the CDN
+- [x] New worker takes over in one load; "Update available, tap to refresh" bar, reloads by itself when nothing plays and nobody is using the app; links after a deploy load the page in full
+- [x] Another voice: "Preparing this page in <name>" near the seek bar, old voice keeps playing until the new page is ready, then it switches at about the same place
+- [x] The page and the next 5 go in a voice queue ahead of the book queue; a failure shows a clear error with Try again
+- [x] Chosen voice id sent and saved, used for the lock-screen buttons, page end and downloads
+- [ ] Eyram checks an update and a voice change in the installed app on the phone after the next deploy
