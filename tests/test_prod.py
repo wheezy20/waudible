@@ -84,6 +84,13 @@ try:
     codes = [rl.post("/register", data={"csrf_token": t, "email": "bad"}, headers=reg).status_code for _ in range(11)]
     T.check("10 sign-up attempts allowed, the 11th gets 429", codes[:10] == [400] * 10 and codes[10] == 429, codes)
 
+    xh = {"X-Forwarded-For": "203.0.113.20"}
+    ex = helpers.HttpsClient(app)
+    helpers.login(ex, "prod", PW, xh)
+    codes = [ex.get("/export/999999999/file?chapter=0", headers=xh).status_code for _ in range(121)]
+    T.check("Save to device: 120 files an hour, the 121st gets 429", codes[:120] == [404] * 120 and codes[120] == 429, codes[-3:])
+    T.check("its JSON check has a separate, larger limit", ex.get("/export/999999999/check?chapter=0", headers=xh).status_code == 404)
+
     T.section("Error pages")
     e = helpers.HttpsClient(app)
     h = {"X-Forwarded-For": "198.51.100.1"}

@@ -153,3 +153,11 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] Ids unchanged everywhere they are stored or sent (database, audio file names, URLs, cache keys, offline downloads), so existing audio, saved voices and downloads keep working
 - [x] Voice picker in the More sheet shows names and descriptions; download text, Downloads, the offline page and player notes use the names
 - [ ] Tone words for the descriptions after listening (only Esinam has one, "warm")
+
+## Save to device
+
+- [x] One MP3 for a chapter, a page range or the whole book, joined from the page MP3s with ffmpeg stream copy (no re-encode), streamed with a clean filename ("Book - 03 Chapter.mp3")
+- [x] ID3 tags (chapter, book, author, track, genre "Audiobook"), the cover as artwork, a chapter marker per page (per chapter for the whole book)
+- [x] Owner only, login required, rate limited; incomplete selections refused with a clear message; one build at a time; no temp files left; the service worker stays out of it
+- [x] Sheet with chapters, sizes and a total, from the book menu, the contents drawer and the Downloads screen; normal link downloads one after another; progress, errors and offline explained
+- [ ] Eyram saves a chapter on the phone and checks it in the Downloads folder, a music player and VLC

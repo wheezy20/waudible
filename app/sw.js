@@ -8,6 +8,8 @@
 // - Downloaded media (/audio and /cover of downloaded books): cache first
 //   from the signed-in user's own cache, with Range support (206) so
 //   seeking works offline. Only offline.js puts files there.
+// - /export/ (Save to device MP3s) is never touched: the browser's own
+//   download fetches it from the server.
 // - Everything else (HTML pages, JSON, form posts) goes to the network
 //   and is never cached.
 // ─────────────────────────────────────────
@@ -85,6 +87,9 @@ self.addEventListener('fetch', event => {
         return;
     }
     if (url.origin !== self.location.origin) return;
+    // Save to device: always straight to the server and the browser's
+    // own download, never through this worker
+    if (url.pathname.startsWith('/export/')) return;
 
     if (req.mode === 'navigate') {
         event.respondWith(fetch(req).catch(offlinePage));

@@ -122,6 +122,7 @@
     <div class="sheet-list" id="book-actions">
         <button type="button" class="sheet-item" id="book-open">{{ icon("play", 22) }}<span>Play</span></button>
         <button type="button" class="sheet-item" id="book-download" data-download-action>{{ icon("download", 22) }}<span class="dl-action-label">Download for offline</span></button>
+        <button type="button" class="sheet-item" id="book-save" data-save-open aria-haspopup="dialog" aria-controls="save-sheet">{{ icon("save", 22) }}<span>Save to device</span></button>
         <button type="button" class="sheet-item danger" id="book-delete">{{ icon("trash", 22) }}<span>Delete book</span></button>
     </div>
 
@@ -138,6 +139,7 @@
 </div>
 
 {% include "_offline_sheets.html" %}
+{% include "_save_sheet.html" %}
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
@@ -145,6 +147,7 @@
 <script src="{{ url_for('static', filename='js/sheets.js') }}"></script>
 <script src="{{ url_for('static', filename='js/offline.js') }}"></script>
 <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+<script src="{{ url_for('static', filename='js/save.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

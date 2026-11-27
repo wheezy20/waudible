@@ -13,7 +13,10 @@ DATA_DIR   = os.environ.get("WAUDIBLE_DATA_DIR") or os.path.join(os.path.dirname
 BOOKS_DIR  = os.path.join(DATA_DIR, 'books')
 COVERS_DIR = os.path.join(DATA_DIR, 'covers')
 AUDIO_DIR  = os.path.join(DATA_DIR, 'audio')
-for _d in (BOOKS_DIR, COVERS_DIR, AUDIO_DIR):
+# "Save to device" builds its MP3s here; each build is deleted before
+# its file is sent (app/export.py)
+EXPORTS_DIR = os.path.join(DATA_DIR, 'exports')
+for _d in (BOOKS_DIR, COVERS_DIR, AUDIO_DIR, EXPORTS_DIR):
     os.makedirs(_d, exist_ok=True)
 
 

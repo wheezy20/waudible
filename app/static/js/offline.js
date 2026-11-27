@@ -832,6 +832,7 @@
         if (text != null) n.textContent = text;
         return n;
     }
+    const SAVE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10M8 9.5l4 4 4-4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
     const TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg>';
     const CHEVRON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 
@@ -861,6 +862,18 @@
             text.append(el('span', 'dl-ch-meta', got.length === pages.length ? 'On this device'
                 : got.length ? `${got.length} of ${pages.length} pages here` : 'Not downloaded'));
             li.append(mark, text);
+            if (!offlineView) {
+                // Save this chapter to the phone as an MP3 (save.js)
+                const save = el('button', 'icon-btn dl-ch-save');
+                save.type = 'button';
+                save.innerHTML = SAVE;
+                save.dataset.saveOpen = '';
+                save.dataset.bookId = rec.id;
+                save.dataset.title = rec.title;
+                save.dataset.page = ch.start;
+                save.setAttribute('aria-label', `Save ${ch.title} to device`);
+                li.append(save);
+            }
             if (got.length) {
                 const rm = el('button', 'icon-btn dl-ch-delete');
                 rm.type = 'button';

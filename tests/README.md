@@ -21,12 +21,14 @@ Never edit `.env` to run the tests.
 | auth | `test_auth.py` | Sign-up with the invite code, login, logout, safe `next` redirects, CSRF |
 | books | `test_books.py` | Uploads and their checks, processing, MP3 audio, progress, `/player`, the htmx page shell, privacy between users, the queue, delete |
 | worker | `test_worker.py` | Pages with nothing to say, failing pages, very long pages, the watchdog restarting the worker, 48 kbps pages and `reencode_audio.py` |
+| export | `test_export.py` | Save to device: filenames, chapters and sizes, ID3 tags, artwork and chapter markers (read back with ffprobe), length equal to the pages, incomplete selections refused, owner only, one build at a time, no leftover files |
 | reqlog | `test_reqlog.py` | Slow request lines (route pattern only, nothing private), masked database connect errors, the 500 page during an outage |
 | prod | `test_prod.py` | Debug off, cookies, security headers, rate limits by real client address, error pages, gunicorn settings, a real gunicorn on a spare port |
 | nav | `browser/nav_check.js` | Audio keeps playing across navigation, mini player, switching and deleting books, upload, session end, logout |
 | back | `browser/back_check.js` | Back closes the open sheet, then the player, before leaving the page |
 | media | `browser/media_check.js` | Lock-screen details and buttons, speed, preloading the next page, page changes, sleep timer |
 | offline | `browser/offline_check.js` | Manifest and service worker, downloading a book or chosen chapters (sizes and totals), adding and deleting chapters, playing offline (page change, seeking with Range requests, contents, lock screen, skipping pages that aren't downloaded), progress sync, the download suggestion, accounts kept apart, delete and logout cleanup |
+| save | `browser/save_check.js` | Save to device sheet from the book menu, the contents drawer and the Downloads screen, real downloads checked with ffprobe, server errors, offline |
 
 The browser suites run headless Chrome through `browser/server.py`, which seeds a test user and three books (the offline suite also gets three more books and a second user) and serves the app on a free local port. The offline suite saves screenshots at 360x640 and 390x844 of the download suggestion, the chapter confirm sheet, the Downloads screen (with and without a book's chapters) and the offline page into `SHOT_DIR` (default: the temporary data folder, which is deleted afterwards). The gunicorn checks in `prod` need the real Kokoro model files in the repo root and are skipped without them; your running service on port 8000 is not touched.
 
