@@ -22,6 +22,7 @@ It started as a single-user app on localhost and is now a small multi-user web a
 - **Contents drawer.** Jump to any chapter from the PDF's table of contents, with dots showing which pages are ready.
 - **Player controls.** Speed from 0.75x to 2x (changed in the browser, so no new audio is needed), six voices (Esinam, Enyonam, Enam, Elikem, Elorm and Eyram), 15 second skips, jump to page, sleep timer, and the page text.
 - **Offline listening.** Install WAudible to your home screen and download a finished book, or just some of its chapters or pages, to the phone. It then plays with no connection, from the lock screen too, with seeking, chapters, speed and the sleep timer. The app suggests downloading a ready book instead of streaming it. Library, Downloads lists what is on the device and how much space it uses. Progress made offline is sent to the server when you're back online.
+- **Save to device.** Save a chapter, several chapters (one MP3 each), a page range or the whole book as one MP3 to the phone's Downloads folder, for any file manager, music player or VLC. Each file has the chapter, book, author, track number and genre "Audiobook" in its tags, the cover as artwork, and a marker at each page (or each chapter for the whole book). From the book menu, a chapter in the contents, or a chapter in Library, Downloads.
 - **Picks up where you left off**, on any device.
 - **Works on phones, tablets and desktop.**
 
@@ -195,6 +196,13 @@ WAudible is a hobby project for a small group of invited people. Here is what it
 
 If you find a security problem, please contact me privately rather than opening a public issue.
 
+## Save to device and its limits
+
+- The files are proper MP3s in your Downloads folder, outside the app: they stay when you log out or delete the book, and the app can't see or remove them. Delete them with your file manager.
+- They are made from the audio that already exists, in the voice you listen with. A chapter (or page range, or the whole book) can be saved once every page of it has audio in that voice; until then the app says how many pages are ready. Chapters that aren't ready can't be picked.
+- Saving needs a connection. Several chapters are saved one after another, each as its own download in the phone's notifications; the browser may ask once to allow several downloads.
+- Joining the pages takes a moment (no re-encoding), and only one file is made at a time on the server, so a second request waits its turn. Up to 120 files an hour per connection.
+
 ## Project layout
 
 ```
@@ -207,6 +215,7 @@ app/
   audio_codec.py   ffmpeg MP3 encoding
   pdf_reader.py    Page text, metadata and contents
   artwork.py       Square cover art for the lock screen
+  export.py        Save to device: one MP3 per chapter, page range or book, with tags and artwork
   limiter.py       Rate limits
   storage.py       Where each book's files live
   request_log.py   Slow request and database connect error logging

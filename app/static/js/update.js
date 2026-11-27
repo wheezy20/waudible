@@ -13,8 +13,9 @@
 //     which a check on every return to the app (registration.update) and
 //     every 30 minutes brings about.
 // Then a small bar says "Update available, tap to refresh". With nothing
-// playing, no sheet open, no download running and no input for a while
-// (or the app in the background), the page reloads by itself.
+// playing, no sheet open, no download or Save to device running and no
+// input for a while (or the app in the background), the page reloads by
+// itself.
 // ─────────────────────────────────────────
 (function () {
     const meta  = document.querySelector('meta[name="waudible-build"]');
@@ -107,6 +108,7 @@
         if (playing()) return false;
         if (window.Sheets && Sheets.anyOpen()) return false;               // upload form, download choices...
         if (window.Offline && Offline.busy && Offline.busy()) return false;
+        if (window.Save && Save.running()) return false;                   // files still being saved to the device
         if (window.Offline && !Offline.isOnline()) return false;           // the reload would show the offline page
         return document.visibilityState === 'hidden' || Date.now() - lastInput >= Update.idleMs;
     }

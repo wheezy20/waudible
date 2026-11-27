@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from flask import (Flask, render_template, request, abort, flash,
                    send_file, redirect, url_for, jsonify, make_response)
@@ -18,7 +19,8 @@ from app.worker import enqueue, enqueue_voice, voice_state, start_worker, VOICE_
 from app.config import database_url
 from app.models import db, Book, Progress
 from app.auth import auth, login_manager
-from app.limiter import limiter, UPLOAD_LIMIT
+from app.limiter import limiter, UPLOAD_LIMIT, EXPORT_LIMIT, EXPORT_CHECK_LIMIT
+from app import export
 from app.request_log import init_request_logging
 
 app = Flask(__name__)
@@ -715,7 +717,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Precached by the service worker (cache first)
 SHELL_FILES = ["css/style.css", "js/update.js", "js/htmx.min.js", "js/sheets.js", "js/offline.js",
-               "js/player.js", "js/app.js", "icons/icon-192.png", "icons/icon-512.png",
+               "js/player.js", "js/save.js", "js/app.js", "icons/icon-192.png", "icons/icon-512.png",
                "icons/maskable-512.png", "icons/apple-touch-icon.png"]
 FONT_CSS    = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
 
@@ -934,6 +936,96 @@ def offline_manifest(book_id):
         data["texts"] = texts
     return _no_store(jsonify(data))
 
+
+
+# ─────────────────────────────────────────
+# SAVE TO DEVICE
+# One MP3 for a chapter, a page range or the whole book, saved by the
+# browser's own download (Android's download manager puts it in
+# Downloads). The page asks /check first, so problems show in the app
+# instead of as a failed download; /file then builds and sends it.
+# Parameters: voice (default: the voice the listener uses), and one of
+# chapter=<index>, pages=<first>-<last> (1-based) or whole=1.
+# ─────────────────────────────────────────
+export.clear_leftovers()
+
+
+def _export_plan(book: Book) -> dict:
+    voice = request.args.get('voice') or (book.progress.voice if book.progress else 'af_heart')
+    if voice not in VOICES:
+        raise export.ExportError("Unknown voice.", 400)
+    toc = extract_toc(pdf_path(book.storage_key))
+    args = request.args
+    if args.get('chapter') is not None:
+        try:
+            chapter = int(args['chapter'])
+        except ValueError:
+            raise export.ExportError("That chapter doesn't exist.", 400)
+        return export.plan(book, toc, voice, chapter=chapter)
+    if args.get('whole') == '1':
+        return export.plan(book, toc, voice, whole=True)
+    m = re.fullmatch(r"(\d{1,6})-(\d{1,6})", args.get('pages', ''))
+    first, last = (int(m[1]) - 1, int(m[2]) - 1) if m else (None, None)
+    return export.plan(book, toc, voice, first=first, last=last)
+
+
+def _export_error(e: export.ExportError):
+    return _no_store(jsonify({"error": e.message})), e.status
+
+
+@app.route('/export/<int:book_id>/info')
+@limiter.limit(EXPORT_CHECK_LIMIT)
+def export_info(book_id):
+    """Chapters with their sizes and whether each can be saved, for the sheet."""
+    book  = _get_book(book_id)
+    voice = request.args.get('voice') or (book.progress.voice if book.progress else 'af_heart')
+    if voice not in VOICES:
+        return _export_error(export.ExportError("Unknown voice.", 400))
+    chs = export.chapters(extract_toc(pdf_path(book.storage_key)), book.pages)
+    sizes = []
+    for page in range(book.pages):
+        path = get_audio_path(book.storage_key, page, voice)
+        sizes.append(os.path.getsize(path) if path else None)
+    rows = [{**c, "pages": c["end"] - c["start"] + 1,
+             "ready": all(sizes[p] is not None for p in range(c["start"], c["end"] + 1)),
+             "bytes": sum(sizes[p] or 0 for p in range(c["start"], c["end"] + 1)),
+             "name": export.file_name(book.title, c["title"], c["index"] + 1, len(chs))} for c in chs]
+    return _no_store(jsonify({
+        "voice": voice, "pages": book.pages, "chapters": rows,
+        "ready_pages": sum(s is not None for s in sizes),
+        "page_bytes": sizes,
+        "whole": {"name": export.file_name(book.title, None), "bytes": sum(s or 0 for s in sizes),
+                  "ready": all(s is not None for s in sizes)},
+    }))
+
+
+@app.route('/export/<int:book_id>/check')
+@limiter.limit(EXPORT_CHECK_LIMIT)
+def export_check(book_id):
+    book = _get_book(book_id)
+    try:
+        info = _export_plan(book)
+    except export.ExportError as e:
+        return _export_error(e)
+    return _no_store(jsonify({"name": info["name"], "bytes": info["bytes"], "pages": len(info["pages"])}))
+
+
+@app.route('/export/<int:book_id>/file')
+@limiter.limit(EXPORT_LIMIT)
+def export_file(book_id):
+    book = _get_book(book_id)
+    try:
+        info = _export_plan(book)
+        handle, size = export.build(book, info)
+    except export.ExportError as e:
+        return _export_error(e)
+    response = send_file(handle, mimetype="audio/mpeg", as_attachment=True,
+                         download_name=info["name"], conditional=False, max_age=0)
+    response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["CDN-Cache-Control"] = "no-store"
+    response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
+    return response
 
 if __name__ == '__main__':
     app.run(debug=DEBUG, port=5000)

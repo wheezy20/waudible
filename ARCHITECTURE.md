@@ -168,6 +168,9 @@ Everything else needs login. A single `before_request` check in `app/main.py` se
 | `/offline/manifest/<book_id>`     | everything to download one finished book, with the real size of every file and page (409 while processing); `?texts=0` leaves out the text for the confirm sheet and the suggestion |
 | `/offline/books`                  | the user's book ids (to drop downloads of deleted books) |
 | `/offline/csrf`                   | a fresh CSRF token for syncing progress saved offline |
+| `/export/<book_id>/info?voice=`   | Save to device: chapters with sizes and whether each can be saved |
+| `/export/<book_id>/check?...`     | Save to device: the filename and size of one file, or why it can't be made (JSON) |
+| `/export/<book_id>/file?...`      | Save to device: the MP3 itself (`chapter=<index>`, `pages=<first>-<last>` or `whole=1`, optional `voice=`) |
 
 Routes take the book's database id rather than the filename, which also avoids problems with spaces and special characters in URLs.
 
@@ -187,7 +190,7 @@ Audio keeps playing while you move around the app, like Spotify.
 
 ## Offline listening (PWA)
 
-Code: `app/sw.js` (service worker, served at `/sw.js`), `static/js/offline.js` (downloads, storage, sync, the Downloads screen and the offline page), small hooks in `player.js` and `app.js`.
+Save to device (MP3s for the phone's Downloads folder) is a separate feature, see below. Code: `app/sw.js` (service worker, served at `/sw.js`), `static/js/offline.js` (downloads, storage, sync, the Downloads screen and the offline page), small hooks in `player.js` and `app.js`.
 
 ### Installing
 
@@ -243,6 +246,19 @@ When a ready book that has nothing downloaded is opened online, a sheet offers t
 - On every online page load the device compares its downloads with `/offline/books` and deletes copies of books that no longer exist. Deleting a book in the app deletes its copy straight away.
 - Logging out first says how many downloaded books (and how much space) will be deleted, then deletes that user's downloads, progress, cached name and suggestion choices, and only then posts the logout.
 - Everything is keyed by user id, so another account on the same browser never sees or gets served someone else's downloads.
+
+## Save to device
+
+Code: `app/export.py` (chapters, names, building), the `/export/` routes in `app/main.py`, `static/js/save.js` and `templates/_save_sheet.html`.
+
+A listener can save MP3 files to the phone's Downloads folder: a chapter, several chapters (one file each), a page range, or the whole book as one file. The sheet opens from the book menu (every chapter that can be saved is ticked), a chapter's button in the contents drawer, or a chapter's button on the Downloads screen (that chapter ticked). It shows each chapter's page range and real size, a total, and the voice (the one the listener uses, `progress.voice`).
+
+1. Chapters follow the same rules as offline downloads (`export.chapters`, a copy of `chaptersOf` in `offline.js`): each contents entry runs to the next, "Beginning" before the first, blocks of 10 pages without real titles.
+2. For each file the page asks `/export/<id>/check`, so a problem shows in the sheet, then starts a normal `<a download>` of `/export/<id>/file`, which the browser's (on Android, the system's) download manager saves under the server's filename. Several files go one after another, 2.5 seconds apart. The service worker never handles `/export/`.
+3. Only complete selections are made: if any page has no audio yet in that voice, both routes answer 409 with a message naming the chapter and counting the ready pages. Bad parameters get 400; another user's book 404; logged out, the login page. `/file` is limited to 120 an hour per client, the JSON routes to 600.
+4. `export.build` takes one of `BUILD_SLOTS` (1) build slots, waiting up to 30 seconds (then 503 "try again"). In a new folder under `data/exports/` it writes a concat list of the page MP3s, a 600x600 letterboxed JPEG of the cover (or the initials artwork) and, for more than one marker, an ffmetadata file with a chapter per page (per chapter for the whole book; page lengths from ffprobe). ffmpeg (argument lists only) then joins everything with stream copy, no re-encoding: the audio frames as they are, the JPEG as the attached front cover, ID3v2.3 tags `title` (chapter, range or book), `album` (book), `artist` and `album_artist` (author), `track` (n/total, chapters only) and `genre` "Audiobook", and the chapters as CHAP frames.
+5. The finished file is opened and the build folder deleted before the response starts, so nothing is left behind whatever happens to the download; the open file is streamed with `Content-Disposition: attachment` and `Cache-Control: no-store`. Folders left by a crash are removed at startup.
+6. Filenames are "Book - 03 Chapter.mp3" (track number padded to the number of chapters), "Book - Pages 12 to 20.mp3" or "Book.mp3", with slashes, reserved characters (`\ / : * ? " < > |`), control characters and leading or trailing dots and spaces removed, and the parts shortened (book 80 characters, chapter 100). Accented letters stay; Werkzeug adds an ASCII fallback and a UTF-8 `filename*`.
 
 ## Upload rules
 

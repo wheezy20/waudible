@@ -163,3 +163,11 @@ Old single-user storage. The running app no longer uses any of it (since step 3)
 - [x] The page and the next 5 go in a voice queue ahead of the book queue; a failure shows a clear error with Try again
 - [x] Chosen voice id sent and saved, used for the lock-screen buttons, page end and downloads
 - [ ] Eyram checks an update and a voice change in the installed app on the phone after the next deploy
+
+## Save to device
+
+- [x] One MP3 for a chapter, a page range or the whole book, joined from the page MP3s with ffmpeg stream copy (no re-encode), streamed with a clean filename ("Book - 03 Chapter.mp3")
+- [x] ID3 tags (chapter, book, author, track, genre "Audiobook"), the cover as artwork, a chapter marker per page (per chapter for the whole book)
+- [x] Owner only, login required, rate limited; incomplete selections refused with a clear message; one build at a time; no temp files left; the service worker stays out of it
+- [x] Sheet with chapters, sizes and a total, from the book menu, the contents drawer and the Downloads screen; normal link downloads one after another; progress, errors and offline explained
+- [ ] Eyram saves a chapter on the phone and checks it in the Downloads folder, a music player and VLC

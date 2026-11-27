@@ -21,12 +21,14 @@ Never edit `.env` to run the tests.
 | auth | `test_auth.py` | Sign-up with the invite code, login, logout, safe `next` redirects, CSRF |
 | books | `test_books.py` | Uploads and their checks, processing, MP3 audio, progress, `/player`, the htmx page shell, build hash in asset URLs and cache headers, the voice routes, privacy between users, the queue, delete |
 | worker | `test_worker.py` | Pages with nothing to say, failing pages, very long pages, the watchdog restarting the worker, voice pages ahead of the book queue, 48 kbps pages and `reencode_audio.py` |
+| export | `test_export.py` | Save to device: filenames, chapters and sizes, ID3 tags, artwork and chapter markers (read back with ffprobe), length equal to the pages, incomplete selections refused, owner only, one build at a time, no leftover files |
 | reqlog | `test_reqlog.py` | Slow request lines (route pattern only, nothing private), masked database connect errors, the 500 page during an outage |
 | prod | `test_prod.py` | Debug off, cookies, security headers, rate limits by real client address, error pages, gunicorn settings, a real gunicorn on a spare port |
 | nav | `browser/nav_check.js` | Audio keeps playing across navigation, mini player, switching and deleting books, upload, session end, logout |
 | back | `browser/back_check.js` | Back closes the open sheet, then the player, before leaving the page |
 | media | `browser/media_check.js` | Lock-screen details and buttons, speed, preloading the next page, page changes, sleep timer |
 | offline | `browser/offline_check.js` | Manifest and service worker, downloading a book or chosen chapters (sizes and totals), adding and deleting chapters, playing offline (page change, seeking with Range requests, contents, lock screen, skipping pages that aren't downloaded), progress sync, the download suggestion, accounts kept apart, delete and logout cleanup |
+| save | `browser/save_check.js` | Save to device sheet from the book menu, the contents drawer and the Downloads screen, real downloads checked with ffprobe, server errors, offline |
 | update | `browser/update_check.js` | After a deploy: matching CSS, JS and service worker in one load, old cache dropped, the update bar, reloading by itself only when idle, a full load for links |
 | voice | `browser/voice_check.js` | Changing voice: preparing status, old voice keeps playing, switching at the same place, the next 5 pages, lock screen, page end and downloads in the new voice, failures with Try again |
 

@@ -655,6 +655,7 @@
     }
 
     // ── CONTENTS ──
+    const SAVE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10M8 9.5l4 4 4-4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
     async function loadToc(id) {
         let chapters = [];
         if (book && book.local) chapters = book.local.toc || [];
@@ -695,6 +696,18 @@
             pg.textContent = 'p.' + (ch.page + 1);
 
             item.append(dot, label, pg);
+            // Save this chapter to the phone as an MP3 (save.js)
+            const save = document.createElement('button');
+            save.type = 'button';
+            save.className = 'icon-btn toc-save';
+            save.innerHTML = SAVE_ICON;
+            save.dataset.saveOpen = '';
+            save.dataset.bookId = book.id;
+            save.dataset.title = book.title;
+            save.dataset.page = ch.page;
+            save.setAttribute('aria-label', `Save ${ch.title} to device`);
+            const row = document.createElement('div');
+            row.className = 'toc-row';
             item.onclick = () => {
                 // A downloaded copy plays the first page of the chapter that is here
                 const target = book && book.local
@@ -703,7 +716,8 @@
                 loadPage(target);
                 closeToc();
             };
-            tocList.appendChild(item);
+            row.append(item, save);
+            tocList.appendChild(row);
         });
 
         updateTocReadiness();
