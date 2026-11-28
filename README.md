@@ -157,7 +157,11 @@ The test suites cover sign-up and login, per-user privacy, uploads, the audio wo
 - With only some chapters on the phone, offline playback skips the missing pages when you press next or previous, stops with a message at the end of a downloaded run, and says so if you pick a page that isn't there. Online, the book plays as usual.
 - A download is the audio for **one voice**, the one you listen with when you download it. Other voices still need a connection.
 - Only **finished** books can be downloaded; a book still being prepared shows the option disabled until its audio is ready.
-- Downloads happen while WAudible is open. If the app is closed or the connection drops part way, the download carries on from where it stopped the next time WAudible is open and online.
+- **Android (Chrome, Edge, Samsung Internet), the installed app too:** a download is handed to the browser (Background Fetch). It carries on with WAudible closed or the screen locked, and the browser shows its own progress notification, where you can also cancel it. If a file doesn't arrive complete, it is fetched again the next time WAudible is open and online.
+- In testing (Chrome 158), the browser accepted one such download per page load and refused a second one in the same session; this isn't documented and may differ on a phone. When the browser refuses, WAudible downloads the book itself, which needs the app open (as below).
+- **iPhone and iPad (Safari, the home screen app too), and Firefox:** there is no Background Fetch. WAudible downloads while it is open and keeps the screen on while it does (Screen Wake Lock, Safari 16.4 and later). If you switch apps or lock the phone it says "Paused while the app was in the background" and carries on by itself when you come back; iOS doesn't let a web app keep downloading in the background, and nothing in WAudible can change that.
+- Downloads go at the speed of the server's upload, measured at about 110 to 200 KB/s on the current home connection: roughly 25 to 45 minutes for a 300 MB book, however many files are fetched at once. WAudible fetches three files at a time (when it downloads itself) to hide the time each request spends going through Cloudflare.
+- A book in a voice other than the one it was made in is slower still: each page not yet made in that voice has to be made first (about a minute per page on this laptop), one at a time.
 - With no connection, uploading, deleting books, changing voice and books that aren't downloaded are unavailable, and the app says so.
 - Downloads use the browser's storage. WAudible asks the browser to keep them (persistent storage), but the browser or the phone can still clear them if space runs out or site data is cleared. There must be room for what you chose before a download starts.
 - Positions saved offline are sent when you're back online. If you also listened on another device in the meantime, the most recent position wins.
@@ -200,7 +204,7 @@ If you find a security problem, please contact me privately rather than opening 
 
 - The files are proper MP3s in your Downloads folder, outside the app: they stay when you log out or delete the book, and the app can't see or remove them. Delete them with your file manager.
 - They are made from the audio that already exists, in the voice you listen with. A chapter (or page range, or the whole book) can be saved once every page of it has audio in that voice; until then the app says how many pages are ready. Chapters that aren't ready can't be picked.
-- Saving needs a connection. Several chapters are saved one after another, each as its own download in the phone's notifications; the browser may ask once to allow several downloads.
+- Saving needs a connection. Several chapters come as **one ZIP file** (one MP3 per chapter, stored uncompressed), so the phone's download manager handles the whole selection in one download that carries on when you switch apps or lock the screen. Your file manager opens it (Files by Google: tap the ZIP, then Extract). A single chapter, a page range or the whole book as one file is still a plain MP3.
 - Joining the pages takes a moment (no re-encoding), and only one file is made at a time on the server, so a second request waits its turn. Up to 120 files an hour per connection.
 
 ## Project layout
@@ -215,7 +219,8 @@ app/
   audio_codec.py   ffmpeg MP3 encoding
   pdf_reader.py    Page text, metadata and contents
   artwork.py       Square cover art for the lock screen
-  export.py        Save to device: one MP3 per chapter, page range or book, with tags and artwork
+  export.py        Save to device: one MP3 per chapter, page range or book (or a ZIP of chapters), with tags and artwork
+  media_cache.py   The user and owner lookups for page audio, kept for a minute
   limiter.py       Rate limits
   storage.py       Where each book's files live
   request_log.py   Slow request and database connect error logging

@@ -62,8 +62,8 @@ run(async browser => {
         && /^p\. 3 to 12, \d+(\.\d)? (KB|MB)$/.test(s.rows[1].meta), s.rows.map(r => r.meta).join(' | '));
   check('chapters not ready in the voice are shown but can\'t be picked', s.rows.map(r => r.disabled).join() === 'false,false,false,true,true'
         && s.rows[3].meta === 'p. 16 to 19, not ready in Esinam yet', s.rows[3].meta);
-  check('the ready ones are picked, with a total', s.rows.filter(r => r.checked).length === 3 && /^3 files, \d/.test(s.total)
-        && s.button === 'Save 3 files' && !s.disabled, `${s.total} / ${s.button}`);
+  check('the ready ones are picked, with a total', s.rows.filter(r => r.checked).length === 3 && /^3 chapters in one ZIP file, \d/.test(s.total)
+        && s.button === 'Save ZIP' && !s.disabled, `${s.total} / ${s.button}`);
   check('it says which voice', s.voice === 'In Esinam, the voice you listen with.', s.voice);
   await shot('save-sheet-390x844.png');
   await page.setViewport({ width: 360, height: 640 }); await sleep(400);
@@ -83,24 +83,34 @@ run(async browser => {
   check('the whole book as one file: refused while it isn\'t ready', s.error === "The whole book isn't ready in Esinam yet: 18 of 40 pages have audio."
         && s.disabled, s.error);
 
-  section('Saving two chapters (one file each)');
+  section('Saving two chapters: one ZIP, one download');
   await mode('chapters');
   await page.click('#save-chapters .dl-chapter[data-chapter="0"] input'); await sleep(200);
   s = await sheet();
-  check('the total follows the choice', /^2 files, /.test(s.total) && s.button === 'Save 2 files', s.total);
+  const zipNote = await page.$eval('#save-zip-note', e => (e.hidden ? '' : e.textContent));
+  check('the total says it is one ZIP', /^2 chapters in one ZIP file, \d/.test(s.total) && s.button === 'Save ZIP', `${s.total} / ${s.button}`);
+  check('and explains why (it carries on in the background)', /carries on when you switch apps or lock the screen/.test(zipNote), zipNote);
+  await shot('save-zip-390x844.png');
+  await page.setViewport({ width: 360, height: 640 }); await sleep(300);
+  await shot('save-zip-360x640.png');
+  await page.setViewport({ width: 390, height: 844 }); await sleep(300);
   await page.click('#save-start');
-  await sleep(300);
+  const files = await waitFiles(1);
+  await page.waitForFunction(() => /on its way/.test(document.getElementById('save-progress-text').textContent), { timeout: 30000 });
   s = await sheet();
-  check('progress shows which file of how many', /^Saving 1 of 2: The Fundamentals$/.test(s.progress), s.progress);
+  check('it ends by saying where it went', s.progress === 'The ZIP with 2 chapters is on its way to your Downloads folder. It carries on if you switch apps.', s.progress);
   await shot('save-progress-390x844.png');
-  const files = await waitFiles(2);
-  await page.waitForFunction(() => /on their way/.test(document.getElementById('save-progress-text').textContent), { timeout: 30000 });
-  s = await sheet();
-  check('it ends by saying where they went', s.progress === 'All 2 files are on their way to your Downloads folder.', s.progress);
+  const zipName = `${BOOK1} - Chapters 2 to 3.zip`;
+  check('one ZIP lands in Downloads', JSON.stringify(files) === JSON.stringify([zipName]), files.join(' | '));
   const want = [`${BOOK1} - 02 The Fundamentals.mp3`, `${BOOK1} - 03 The Man Who Didn't Look Right.mp3`];
-  check('two MP3s land in Downloads with the chapter names', JSON.stringify(files.sort()) === JSON.stringify(want), files.join(' | '));
-  if (files.includes(want[0])) {
-    const p = probe(path.join(DL, want[0]));
+  if (files.includes(zipName)) {
+    // List and unpack it with Python's zipfile (no extra tools needed)
+    const listing = JSON.parse(execFileSync('python3', ['-c', `import json,sys,zipfile
+z = zipfile.ZipFile(sys.argv[1]); z.extractall(sys.argv[2])
+print(json.dumps([[i.filename, i.compress_type] for i in z.infolist()]))`, path.join(DL, zipName), path.join(DL, 'unzipped')]).toString());
+    check('with the two chapter MP3s, stored uncompressed', JSON.stringify(listing.map(x => x[0])) === JSON.stringify(want)
+          && listing.every(x => x[1] === 0), JSON.stringify(listing));
+    const p = probe(path.join(DL, 'unzipped', want[0]));
     const tags = p.format.tags || {};
     check('tags: chapter, book, author, track, genre', tags.title === 'The Fundamentals' && tags.album.startsWith('Atomic Habits')
           && tags.artist === 'James Clear' && tags.track === '2/5' && tags.genre === 'Audiobook', JSON.stringify(tags));
@@ -116,7 +126,7 @@ run(async browser => {
   await page.evaluate(() => Sheets.close()); await sleep(400);
 
   section('One file for the whole book');
-  for (const f of fs.readdirSync(DL)) fs.unlinkSync(path.join(DL, f));
+  fs.rmSync(DL, { recursive: true, force: true }); fs.mkdirSync(DL, { recursive: true });
   await fromMenu(b2);
   await mode('whole');
   s = await sheet();
@@ -155,7 +165,7 @@ run(async browser => {
     } else r.continue();
   };
   page.on('request', intercept);
-  for (const f of fs.readdirSync(DL)) fs.unlinkSync(path.join(DL, f));
+  fs.rmSync(DL, { recursive: true, force: true }); fs.mkdirSync(DL, { recursive: true });
   await page.click('#save-start');
   await page.waitForFunction(() => document.getElementById('save-progress-error').textContent, { timeout: 15000 });
   s = await sheet();

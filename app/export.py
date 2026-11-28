@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 import unicodedata
+import zipfile
 from app.artwork import fallback_artwork
 from app.storage import EXPORTS_DIR, cover_path
 from app.tts_engine import get_audio_path
@@ -170,62 +171,69 @@ def _chapter_file(markers, durations: dict) -> str:
     return "".join(lines)
 
 
-def build(book, info: dict) -> tuple:
+def _artwork(book, work: str) -> str:
+    """Square JPEG artwork, letterboxed like the lock-screen artwork (the
+    cover, or the initials artwork for a book without one)."""
+    cover = cover_path(book.cover) if book.cover else None
+    if not cover or not os.path.exists(cover):
+        cover = os.path.join(work, "cover.png")
+        with open(cover, "wb") as f:
+            f.write(fallback_artwork(book.title, ARTWORK_SIZE))
+    size = ARTWORK_SIZE
+    art = os.path.join(work, "cover.jpg")
+    _ffmpeg(["-i", cover, "-frames:v", "1", "-q:v", "3",
+             "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease,"
+                    f"pad={size}:{size}:(ow-iw)/2:(oh-ih)/2:color=0x111111", art], timeout=30)
+    return art
+
+
+def _make_mp3(book, info: dict, work: str, art: str, out: str):
+    """Join the pages of one file into out, with tags, artwork and markers."""
+    tag = os.path.splitext(os.path.basename(out))[0]
+    listing = os.path.join(work, f"{tag}-pages.txt")
+    with open(listing, "w", encoding="utf-8") as f:
+        f.writelines(_concat_line(p) for p in info["files"])
+
+    # Chapter markers need each page's length; one marker only adds noise
+    chapters_file = None
+    if len(info["markers"]) > 1:
+        durations = {p: duration(f) for p, f in zip(info["pages"], info["files"])}
+        chapters_file = os.path.join(work, f"{tag}-chapters.txt")
+        with open(chapters_file, "w", encoding="utf-8") as f:
+            f.write(_chapter_file(info["markers"], durations))
+
+    tags = {"title": info["title"], "album": book.title, "artist": book.author or "",
+            "album_artist": book.author or "", "genre": "Audiobook"}
+    if info["track"]:
+        tags["track"] = f"{info['track']}/{info['tracks']}"
+    # Everything copied as it is: the page frames, then the artwork
+    args = ["-f", "concat", "-safe", "0", "-i", listing, "-i", art]
+    if chapters_file:
+        args += ["-f", "ffmetadata", "-i", chapters_file]
+    args += ["-map", "0:a", "-map", "1:v",
+             "-map_metadata", "2" if chapters_file else "-1",
+             "-map_chapters", "2" if chapters_file else "-1",
+             "-c", "copy",
+             "-disposition:v:0", "attached_pic",
+             "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)",
+             "-id3v2_version", "3"]
+    for key, value in tags.items():
+        args += ["-metadata", f"{key}={value}"]
+    _ffmpeg(args + ["-f", "mp3", out])
+
+
+def _built(book, make) -> tuple:
     """
-    Make the MP3 and return (open file, size). The build folder is gone
-    by the time this returns; the open file is all that is left, and it
+    Run make(work) in a fresh build folder under a build slot, and return
+    (open file, size) of the path it returns. The folder is gone by the
+    time this returns; the open file is all that is left, and it
     disappears when closed. Raises Busy when no slot frees up in time.
     """
     if not _slots.acquire(timeout=WAIT_SECONDS):
         raise Busy()
     work = tempfile.mkdtemp(prefix="build-", dir=EXPORTS_DIR)
     try:
-        listing = os.path.join(work, "pages.txt")
-        with open(listing, "w", encoding="utf-8") as f:
-            f.writelines(_concat_line(p) for p in info["files"])
-
-        # Cover (or the initials artwork for a book without one)
-        cover = cover_path(book.cover) if book.cover else None
-        if not cover or not os.path.exists(cover):
-            cover = os.path.join(work, "cover.png")
-            with open(cover, "wb") as f:
-                f.write(fallback_artwork(book.title, ARTWORK_SIZE))
-
-        # Chapter markers need each page's length; one marker only adds noise
-        chapters_file = None
-        if len(info["markers"]) > 1:
-            durations = {p: duration(f) for p, f in zip(info["pages"], info["files"])}
-            chapters_file = os.path.join(work, "chapters.txt")
-            with open(chapters_file, "w", encoding="utf-8") as f:
-                f.write(_chapter_file(info["markers"], durations))
-
-        # Square JPEG artwork, letterboxed like the lock-screen artwork
-        size = ARTWORK_SIZE
-        art = os.path.join(work, "cover.jpg")
-        _ffmpeg(["-i", cover, "-frames:v", "1", "-q:v", "3",
-                 "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease,"
-                        f"pad={size}:{size}:(ow-iw)/2:(oh-ih)/2:color=0x111111", art], timeout=30)
-
-        tags = {"title": info["title"], "album": book.title, "artist": book.author or "",
-                "album_artist": book.author or "", "genre": "Audiobook"}
-        if info["track"]:
-            tags["track"] = f"{info['track']}/{info['tracks']}"
-        # Everything copied as it is: the page frames, then the artwork
-        args = ["-f", "concat", "-safe", "0", "-i", listing, "-i", art]
-        if chapters_file:
-            args += ["-f", "ffmetadata", "-i", chapters_file]
-        args += ["-map", "0:a", "-map", "1:v",
-                 "-map_metadata", "2" if chapters_file else "-1",
-                 "-map_chapters", "2" if chapters_file else "-1",
-                 "-c", "copy",
-                 "-disposition:v:0", "attached_pic",
-                 "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)",
-                 "-id3v2_version", "3"]
-        for key, value in tags.items():
-            args += ["-metadata", f"{key}={value}"]
-        out = os.path.join(work, "out.mp3")
-        args += ["-f", "mp3", out]
-        _ffmpeg(args)
+        out = make(work)
         handle = open(out, "rb")
         return handle, os.fstat(handle.fileno()).st_size
     except subprocess.CalledProcessError as e:
@@ -235,3 +243,43 @@ def build(book, info: dict) -> tuple:
     finally:
         shutil.rmtree(work, ignore_errors=True)
         _slots.release()
+
+
+def build(book, info: dict) -> tuple:
+    """One MP3: (open file, size)."""
+    def make(work):
+        out = os.path.join(work, "out.mp3")
+        _make_mp3(book, info, work, _artwork(book, work), out)
+        return out
+    return _built(book, make)
+
+
+# ── SEVERAL CHAPTERS AS ONE ZIP ──
+# One request instead of one per chapter, so the phone's download manager
+# owns the whole selection and it carries on with the app in the
+# background. Entries are stored, not compressed: MP3 doesn't shrink, and
+# stored entries cost no CPU. Each entry is the same MP3 a single save
+# makes (pages joined by stream copy), built inside one build slot.
+def zip_name(book_title: str, chosen: list[dict], total: int) -> str:
+    if len(chosen) == total:
+        part = "All chapters"
+    elif [c["index"] for c in chosen] == list(range(chosen[0]["index"], chosen[-1]["index"] + 1)):
+        part = f"Chapters {chosen[0]['index'] + 1} to {chosen[-1]['index'] + 1}"
+    else:
+        part = f"{len(chosen)} chapters"
+    return file_name(book_title, part)[:-4] + ".zip"
+
+
+def build_zip(book, infos: list[dict]) -> tuple:
+    """A ZIP of one MP3 per chapter: (open file, size)."""
+    def make(work):
+        art = _artwork(book, work)
+        out = os.path.join(work, "out.zip")
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+            for n, info in enumerate(infos):
+                mp3 = os.path.join(work, f"part{n}.mp3")
+                _make_mp3(book, info, work, art, mp3)
+                z.write(mp3, arcname=info["name"])
+                os.remove(mp3)            # only the ZIP grows
+        return out
+    return _built(book, make)

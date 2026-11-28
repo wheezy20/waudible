@@ -236,7 +236,8 @@
     function state(id) {
         id = Number(id);
         const job = jobs.get(id), k = known.get(id);
-        if (job) return { name: 'downloading', pct: job.total ? Math.round(100 * job.done / job.total) : 0, job };
+        if (job) return { name: 'downloading', pct: job.total ? Math.round(100 * job.done / job.total) : 0, job,
+                          paused: !!job.paused, background: job.mode === 'background' };
         if (k && k.pending) return { name: 'partial', ...k };       // stopped part way, resumes online
         if (k && k.have) return { name: 'downloaded', whole: k.have === k.pages, ...k };
         return { name: 'none' };
@@ -302,33 +303,33 @@
 
             const files = [...(rec.art ? [] : art), ...todo.map(audioOf)];
             job.total = files.length;
-            let artLeft = rec.art ? 0 : art.length;
+            // Files already in the cache at the right size (a resumed download)
+            const left = [];
             for (const f of files) {
-                if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-                const cached = await cache.match(f.url);
-                if (!(cached && f.bytes != null && Number(cached.headers.get('Content-Length')) === f.bytes)) {
-                    const r = await fetch(f.url, { signal, cache: 'no-store' });
-                    if (!r.ok || r.redirected) throw new DlError("Part of the book couldn't be downloaded. Please try again.");
-                    const blob = await r.blob();
-                    // Pages without audio for this voice are made on demand,
-                    // so their size is only known now
-                    const expected = f.bytes != null ? f.bytes : Number(r.headers.get('Content-Length') || blob.size);
-                    if (blob.size !== expected) throw new DlError("A file didn't download completely. Please try again.");
-                    f.bytes = blob.size;
-                    await cache.put(f.url, new Response(blob, { headers: {
-                        'Content-Type': r.headers.get('Content-Type') || blob.type || 'application/octet-stream',
-                        'Content-Length': String(blob.size),
-                    } }));
+                if (await DlStore.isStored(cache, f)) { DlStore.markStored(rec, f); job.done++; }
+                else left.push(f);
+            }
+            if (rec.art || (await DlStore.artStored(cache, rec))) rec.art = true;
+            await put('books', DlStore.settle(rec));
+            changed(id);
+
+            // Files the server already has: to the browser's Background
+            // Fetch where there is one (it carries on with the app closed),
+            // otherwise the app's own loop. Pages that still have to be made
+            // in this voice go one at a time through the app's loop.
+            const ready = left.filter(f => f.bytes != null);
+            const later = left.filter(f => f.bytes == null);
+            const bgf = ready.length ? await backgroundFetcher() : null;
+            if (bgf && await inBackground(bgf, me, id, man.title, ready, job)) {
+                rec = await getBook(me, id);
+                if (!rec) throw new DOMException('Cancelled', 'AbortError');
+                if (later.length) await inForeground(job, rec, cache, later, signal);
+                else if (rec.pending.length) {
+                    job.error = 'Part of the book didn\'t download. It carries on next time you open WAudible online.';
+                    throw new DlError(job.error);
                 }
-                if (f.kind === 'audio') {
-                    rec.have.push(f.page);
-                    rec.pending = rec.pending.filter(p => p !== f.page);
-                } else if (--artLeft === 0) {
-                    rec.art = true;
-                }
-                job.done++;
-                if (job.done % 3 === 0) { rec.bytes = storedBytes(rec); await put('books', rec); }   // for resuming
-                changed(id);
+            } else {
+                await inForeground(job, rec, cache, [...ready, ...later], signal);
             }
             rec.have.sort((a, b) => a - b);
             rec.pending = [];
@@ -366,11 +367,191 @@
     }
     const lastError = new Map();
 
+    // ── TRANSFER: BACKGROUND FETCH ──
+    // Chromium (Android Chrome, the installed app too): the browser downloads
+    // the files itself, keeps going with the app closed or the screen locked,
+    // and shows its own progress notification. sw.js stores them when it
+    // finishes and tells any open page.
+    const BG_PREFIX = u => `waudible:${u}:`;
+    const bgId = (u, id) => `${BG_PREFIX(u)}${id}`;
+    async function backgroundFetcher() {
+        if (window.__waudibleNoBackgroundFetch || !('BackgroundFetchManager' in window) || !navigator.serviceWorker) return null;
+        try {
+            const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 3000))]);
+            return reg && reg.backgroundFetch ? reg.backgroundFetch : null;
+        } catch (e) { return null; }
+    }
+
+    const bgWaiters = new Map();      // book id -> resolve(outcome) when sw.js has stored the files
+    if (navigator.serviceWorker) {
+        navigator.serviceWorker.addEventListener('message', async e => {
+            const m = e.data;
+            if (!m || m.type !== 'bgfetch' || m.uid !== uid) return;
+            const wait = bgWaiters.get(m.book);
+            if (wait) { bgWaiters.delete(m.book); wait(m.outcome); }
+            await refreshKnown();
+            changed(m.book);
+        });
+    }
+
+    async function inBackground(bgf, me, id, title, files, job) {
+        let reg = await bgf.get(bgId(me, id));
+        if (!reg) {
+            const total = files.reduce((n, f) => n + f.bytes, 0);
+            try {
+                reg = await bgf.fetch(bgId(me, id), files.map(f => f.url), {
+                    title: `Downloading "${title}"`,
+                    icons: [{ src: '/static/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+                    downloadTotal: total,
+                });
+            } catch (e) {
+                // The browser said no (Chrome ties this to the site's "automatic
+                // downloads" permission, which can refuse a second download):
+                // the app's own loop does it instead
+                return false;
+            }
+        }
+        job.bg = reg;
+        job.mode = 'background';
+        const base = job.done, count = files.length;
+        const progress = () => {
+            if (reg.downloadTotal) job.done = base + Math.floor(count * reg.downloaded / reg.downloadTotal);
+            changed(id);
+        };
+        reg.addEventListener('progress', progress);
+        progress();
+        const outcome = await new Promise(resolve => {
+            bgWaiters.set(id, resolve);
+            // sw.js normally reports back; if this page missed the message, the
+            // registration's own result is enough once the files are stored
+            const check = setInterval(() => {
+                if (reg.result) { clearInterval(check); setTimeout(() => { if (bgWaiters.get(id) === resolve) { bgWaiters.delete(id); resolve(reg.result === 'success' ? 'success' : reg.failureReason === 'aborted' ? 'abort' : 'failure'); } }, 15000); }
+            }, 1000);
+        });
+        reg.removeEventListener('progress', progress);
+        job.done = base + count;
+        if (outcome === 'abort') { job.cancelled = true; throw new DOMException('Cancelled', 'AbortError'); }
+        return true;
+    }
+
+    // Logging out or removing a book stops its background download too
+    async function stopBackground(u, id = null) {
+        const bgf = await backgroundFetcher();
+        if (!bgf) return;
+        for (const key of await bgf.getIds()) {
+            if (key === bgId(u, id) || (id === null && key.startsWith(BG_PREFIX(u)))) {
+                const reg = await bgf.get(key);
+                if (reg) await reg.abort().catch(() => {});
+            }
+        }
+    }
+
+    // ── TRANSFER: THE APP'S OWN LOOP ──
+    // Where there is no Background Fetch (Safari, Firefox). PARALLEL files at
+    // once (gunicorn has 4 threads: one stays free for the player), pages
+    // still to be made one at a time. The screen stays on while it runs
+    // (Wake Lock); when the app goes to the background it pauses cleanly
+    // (files in flight are dropped and fetched again) and carries on by
+    // itself when the app comes back.
+    const PARALLEL = 3;
+    const PAUSED_TEXT = 'Paused while the app was in the background';
+
+    function anySignal(signals) {
+        if (AbortSignal.any) return AbortSignal.any(signals);
+        const ctrl = new AbortController();
+        for (const sg of signals) {
+            if (sg.aborted) { ctrl.abort(); break; }
+            sg.addEventListener('abort', () => ctrl.abort(), { once: true });
+        }
+        return ctrl.signal;
+    }
+
+    async function inForeground(job, rec, cache, files, signal) {
+        job.mode = 'foreground';
+        let pause = new AbortController();
+        let wake = null;
+        const lockScreen = async () => {
+            try { if (navigator.wakeLock && document.visibilityState === 'visible') wake = await navigator.wakeLock.request('screen'); }
+            catch (e) { wake = null; }      // not allowed (battery saver, no support): carry on without
+        };
+        let waiting = [];            // every lane that is waiting for the app to come back
+        const visible = () => new Promise(r => waiting.push(r));
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') {
+                if (job.paused) return;
+                job.paused = true;
+                job.note = PAUSED_TEXT;
+                pause.abort();
+                pause = new AbortController();
+                put('books', DlStore.settle(rec)).catch(() => {});
+                changed(rec.id);
+            } else if (job.paused) {
+                job.paused = false;
+                toast(`${PAUSED_TEXT}. Carrying on now.`);
+                lockScreen();
+                const lanes = waiting;
+                waiting = [];
+                lanes.forEach(r => r());
+                changed(rec.id);
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        await lockScreen();
+        let saved = 0;
+        const one = async f => {
+            const r = await fetch(f.url, { signal: anySignal([signal, pause.signal]), cache: 'no-store' });
+            try {
+                await DlStore.storeResponse(cache, f, r);
+            } catch (e) {
+                if (e instanceof DlStore.StoreError) {
+                    throw new DlError(e.reason === 'size' ? "A file didn't download completely. Please try again."
+                                                          : "Part of the book couldn't be downloaded. Please try again.");
+                }
+                throw e;
+            }
+            DlStore.markStored(rec, f);
+            if (f.kind !== 'audio' && !rec.art) rec.art = await DlStore.artStored(cache, rec);
+            job.done++;
+            if (++saved % 3 === 0) await put('books', DlStore.settle(rec));   // for resuming
+            changed(rec.id);
+        };
+        const run = async list => {
+            while (list.length) {
+                if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+                if (job.paused) { await visible(); continue; }
+                const f = list.shift();
+                job.active = (job.active || 0) + 1;
+                job.peak = Math.max(job.peak || 0, job.active);
+                try {
+                    await one(f);
+                } catch (e) {
+                    // Paused part way: that file starts again when the app is back
+                    if (e.name === 'AbortError' && !signal.aborted) { list.unshift(f); continue; }
+                    signal.aborted || job.ctrl.abort();      // stop the other lanes too
+                    throw e;
+                } finally {
+                    job.active--;
+                }
+            }
+        };
+        try {
+            const ready = files.filter(f => f.bytes != null), later = files.filter(f => f.bytes == null);
+            await Promise.all(Array.from({ length: Math.min(PARALLEL, ready.length) }, () => run(ready)));
+            await run(later);
+        } finally {
+            document.removeEventListener('visibilitychange', onVisibility);
+            if (wake) wake.release().catch(() => {});
+            job.paused = false;
+            job.note = '';
+        }
+    }
+
     function cancel(id) {
         const job = jobs.get(Number(id));
         if (!job) return;
         job.cancelled = true;
         job.ctrl.abort();
+        if (job.bg) job.bg.abort().catch(() => {});     // the browser's download stops too
     }
 
     // Remove some pages (a chapter); the whole record goes when none are left
@@ -417,6 +598,7 @@
         await ready;
         if (uid == null) return;
         if (jobs.has(id)) cancel(id);
+        await stopBackground(uid, id);
         await removeFor(uid, id);
         await refreshKnown();
         changed(id);
@@ -426,6 +608,7 @@
         await ready;
         if (uid == null) return;
         for (const id of jobs.keys()) cancel(id);
+        await stopBackground(uid);
         for (const rec of await allOf('books', uid)) await del('books', [uid, rec.id]);
         await caches.delete(cacheName(uid));
         await refreshKnown();
@@ -571,7 +754,7 @@
             btn.hidden = false;
             const s = state(id);
             let text = 'Download for offline', disabled = false;
-            if (s.name === 'downloading') text = `Downloading ${s.pct}%`;
+            if (s.name === 'downloading') text = s.paused ? `Paused at ${s.pct}%` : `Downloading ${s.pct}%`;
             else if (s.name === 'downloaded') text = s.whole ? 'Downloaded to this device' : `Downloaded: ${s.have} of ${s.pages} pages`;
             else if (btn.dataset.ready !== '1') { text = 'Download (when the audio is ready)'; disabled = true; }
             else if (s.name === 'partial') { text = 'Resume download'; disabled = !isOnline(); }
@@ -679,8 +862,9 @@
             setSheetState('progress');
             $('dl-ring').style.setProperty('--p', s.pct + '%');
             $('dl-pct').textContent = s.pct + '%';
-            $('dl-progress-text').textContent = s.job.total
-                ? `Downloading page audio and text, ${s.job.done} of ${s.job.total} files.` : 'Starting...';
+            $('dl-progress-text').textContent = s.paused ? `${PAUSED_TEXT}. It carries on when you come back.`
+                : s.background ? `Downloading ${s.job.done} of ${s.job.total} files. The browser carries on with WAudible closed or the screen locked.`
+                : s.job.total ? `Downloading page audio and text, ${s.job.done} of ${s.job.total} files.` : 'Starting...';
             return;
         }
         setSheetState('confirm');
@@ -840,7 +1024,7 @@
     const expanded = new Set();     // books whose chapters are shown
 
     function bookMeta(rec, s) {
-        if (s.name === 'downloading') return `Downloading ${s.pct}%`;
+        if (s.name === 'downloading') return s.paused ? `${PAUSED_TEXT} (${s.pct}%)` : `Downloading ${s.pct}%`;
         const bytes = size(storedBytes(rec));
         const pages = rec.have.length === rec.pages ? `Whole book, ${bytes}` : `${rec.have.length} of ${rec.pages} pages, ${bytes}`;
         if (rec.pending.length) return `${pages}. ${isOnline() ? 'More coming' : 'More comes when you are back online'}.`;
@@ -1051,6 +1235,7 @@
         if (uid == null) return;
         const u = uid;
         for (const id of jobs.keys()) cancel(id);
+        await stopBackground(u).catch(() => {});
         try {
             for (const rec of await allOf('books', u)) await del('books', [u, rec.id]);
             for (const p of await allOf('progress', u)) await del('progress', [u, p.id]);

@@ -13,6 +13,7 @@ from wtforms.validators import (DataRequired, Length, Regexp,
                                 EqualTo, ValidationError)
 from app.models import db, User
 from app.limiter import limiter, AUTH_LIMIT
+from app import media_cache
 
 auth = Blueprint("auth", __name__)
 
@@ -29,7 +30,11 @@ _DUMMY_HASH = generate_password_hash("waudible-timing-dummy")
 
 @login_manager.user_loader
 def load_user(user_id: str):
-    return db.session.get(User, int(user_id))
+    uid = int(user_id)
+    # Page audio: the user is kept for a minute (app/media_cache.py)
+    if request.endpoint in media_cache.MEDIA_ENDPOINTS:
+        return media_cache.user(uid, lambda: db.session.get(User, uid))
+    return db.session.get(User, uid)
 
 
 def _clean_email(value):
@@ -164,6 +169,8 @@ def login():
 # ─────────────────────────────────────────
 @auth.route("/logout", methods=["POST"])
 def logout():
+    if current_user.is_authenticated:
+        media_cache.forget_user(current_user.id)
     logout_user()
     target = request.form.get("next") or request.args.get("next")
     return redirect(_safe_next(target) or url_for("auth.login"))
